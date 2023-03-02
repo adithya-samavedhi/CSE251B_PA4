@@ -2,13 +2,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from datetime import datetime
+import torch.optim as optim
 
 from caption_utils import *
 from constants import ROOT_STATS_DIR
 from dataset_factory import get_datasets
 from file_utils import *
 from model_factory import get_model
-
+import torch.nn as nn
 
 # Class to encapsulate a neural experiment.
 # The boilerplate code to setup the experiment, log stats, checkpoints and plotting have been provided to you.
@@ -39,13 +40,13 @@ class Experiment(object):
         self.__model = get_model(config_data, self.__vocab)
 
         # TODO: Set these Criterion and Optimizers Correctly
-        self.__criterion = None
-        self.__optimizer = None
+        self.__criterion =  nn.NLLLoss()
+        self.__optimizer =  optim.Adam(self.__model.parameters(), lr=0.002)
 
         self.__init_model()
 
         # Load Experiment Data if available
-        self.__load_experiment()
+        # self.__load_experiment()
 
     # Loads the experiment data if exists to resume training from last saved checkpoint.
     def __load_experiment(self):
@@ -82,12 +83,32 @@ class Experiment(object):
 
     # TODO: Perform one training iteration on the whole dataset and return loss value
     def __train(self):
+        device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
         self.__model.train()
         training_loss = 0
 
+        x=  next(iter(self.__train_loader))
+        print(x[0].shape)
+        print(x[1].shape)
+
+        self.__optimizer.zero_grad()
+
+        # both inputs and labels have to reside in the same device as the model's
+        inputs =  x[0].to(device)
+        labels =   x[1].to(device)
+
+        outputs =  self.__model.forward(inputs, labels) # TODO  Compute outputs. we will not need to transfer the output, it will be automatically in the same device as the model's!
+        loss =  self.__criterion(outputs, labels)
+        
+
+
+
+
+
         # Iterate over the data, implement the training function
-        for i, (images, captions, _) in enumerate(self.__train_loader):
-            raise NotImplementedError()
+        # for i, (images, captions, _) in enumerate(self.__train_loader):
+        #     raise NotImplementedError()
 
         return training_loss
 
