@@ -26,11 +26,15 @@ class TransferLearningResNet34(nn.Module):
         self.vocab_size = vocab_size
         resnet34 = models.resnet34(pretrained=True)
         self.resnet34 = nn.Sequential(*list(resnet34.children())[:-1])
+        for param in self.resnet34.parameters():
+            param.requires_grad = False
         self.linear = nn.Linear(512, 256)
         self.embedding = nn.Embedding(self.vocab_size, 256)
         self.lstm = nn.LSTM(input_size=256, hidden_size=256, num_layers=2, batch_first=True)
         self.fc = nn.Linear(256, self.vocab_size)
         self.softmax = nn.Softmax(dim=2)
+        self.lstm_cell = nn.LSTMCell(256,256)
+        self.hidden_size = hidden_dim
 
 
     def forward(self, x, captions=None):
@@ -49,26 +53,39 @@ class TransferLearningResNet34(nn.Module):
             # inputs = torch.cat([x, captions], dim=2)  # shape (batch_size, max_caption_length, 512)
             inputs = captions
 
-            # Pass the concatenated inputs through the LSTM
-            hiddens, _ = self.lstm(inputs)  # shape (batch_size, max_caption_length, 256)
+            hidden_state = torch.zeros((captions.size(0), self.hidden_size))
+            cell_state = torch.zeros((captions.size(0), self.hidden_size))
+            outputs = torch.empty((captions.size(0), captions.size(1), self.vocab_size))
+            print("hidden state shape",hidden_state.shape)
+            print("cell state shape", cell_state.shape)
+            print("x", x.shape)
+            hidden_state, cell_state = self.lstm_cell(x,(hidden_state,cell_state))
+            for t in range(captions.size(1)-1):
+                hidden_state, cell_state = self.lstm_cell(captions[:,t+1,:], (hidden_state,cell_state))
 
-            # Project the LSTM outputs to the vocabulary space
-            outputs = self.fc(hiddens)  # shape (batch_size, max_caption_length, vocab_size)
-            outputs = self.softmax(outputs)  # shape (batch_size, max_caption_length, vocab_size)
+                outputs[:,t,:] = self.fc(hidden_state)
 
             return outputs
 
-        else:
-            return x
-        
-        # x = self.resnet50(x)
-        # x = self.linear(x)
-        # x = self.embedding(x)
-        # x = self.lstm(x)
-        # x = self.output_linear(x)
-        # x = self.softmax(x)
+        # else:
 
-        # return x
+            # # Concatenate the encoded image with the caption embeddings
+            # x = x.unsqueeze(1)  # shape (batch_size, 1, 256)
+            # x = x.repeat(1, captions.size(1), 1)  # shape (batch_size, max_caption_length, 256)
+            # # inputs = torch.cat([x, captions], dim=2)  # shape (batch_size, max_caption_length, 512)
+            # inputs = captions
+            #
+            # hidden_state = torch.zeros((captions.size(0), self.hidden_size))
+            # cell_state = torch.zeros((captions.size(0), self.hidden_size))
+            # outputs = torch.empty((captions.size(0), captions.size(1), self.vocab_size))
+            #
+            # hidden_state, cell_state = self.lstm_cell(x, (hidden_state, cell_state))
+            # for t in range(captions.size(1) - 1):
+            #     hidden_state, cell_state = self.lstm_cell(captions[:, t + 1, :], (hidden_state, cell_state))
+            #
+            #     outputs[:, t, :] = self.fc(hidden_state)
+            #
+            # return outputs
 
 
 
