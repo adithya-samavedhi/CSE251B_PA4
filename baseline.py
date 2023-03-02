@@ -48,8 +48,8 @@ class TransferLearningResNet34(nn.Module):
             captions = self.embedding(captions)  # shape (batch_size, max_caption_length, 256)
 
             # Concatenate the encoded image with the caption embeddings
-            x = x.unsqueeze(1)  # shape (batch_size, 1, 256)
-            x = x.repeat(1, captions.size(1), 1)  # shape (batch_size, max_caption_length, 256)
+            # x = x.unsqueeze(1)  # shape (batch_size, 1, 256)
+            # x = x.repeat(1, captions.size(1), 1)  # shape (batch_size, max_caption_length, 256)
             # inputs = torch.cat([x, captions], dim=2)  # shape (batch_size, max_caption_length, 512)
             inputs = captions
 
@@ -67,25 +67,25 @@ class TransferLearningResNet34(nn.Module):
 
             return outputs
 
-        # else:
+        else:
 
-            # # Concatenate the encoded image with the caption embeddings
-            # x = x.unsqueeze(1)  # shape (batch_size, 1, 256)
-            # x = x.repeat(1, captions.size(1), 1)  # shape (batch_size, max_caption_length, 256)
-            # # inputs = torch.cat([x, captions], dim=2)  # shape (batch_size, max_caption_length, 512)
-            # inputs = captions
-            #
-            # hidden_state = torch.zeros((captions.size(0), self.hidden_size))
-            # cell_state = torch.zeros((captions.size(0), self.hidden_size))
-            # outputs = torch.empty((captions.size(0), captions.size(1), self.vocab_size))
-            #
-            # hidden_state, cell_state = self.lstm_cell(x, (hidden_state, cell_state))
-            # for t in range(captions.size(1) - 1):
-            #     hidden_state, cell_state = self.lstm_cell(captions[:, t + 1, :], (hidden_state, cell_state))
-            #
-            #     outputs[:, t, :] = self.fc(hidden_state)
-            #
-            # return outputs
+            # Concatenate the encoded image with the caption embeddings
+            x = x.unsqueeze(1)  # shape (batch_size, 1, 256)
+            x = x.repeat(1, captions.size(1), 1)  # shape (batch_size, max_caption_length, 256)
+            # inputs = torch.cat([x, captions], dim=2)  # shape (batch_size, max_caption_length, 512)
+            inputs = captions
+
+            hidden_state = torch.zeros((captions.size(0), self.hidden_size))
+            cell_state = torch.zeros((captions.size(0), self.hidden_size))
+            outputs = torch.empty((captions.size(0), captions.size(1), self.vocab_size))
+
+            hidden_state, cell_state = self.lstm_cell(x, (hidden_state, cell_state))
+            for t in range(captions.size(1) - 1):
+                hidden_state, cell_state = self.lstm_cell(outputs[:, t, :], (hidden_state, cell_state))
+
+                outputs[:, t+1, :] = self.fc(hidden_state)
+
+            return outputs
 
 
 

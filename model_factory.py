@@ -6,6 +6,6 @@ def get_model(config_data, vocab):
     model_type = config_data['model']['model_type']
 
     # You may add more parameters if you want
-    model = TransferLearningResNet34(4, hidden_size,len(vocab))
+    model = TransferLearningResNet34(4, 256,len(vocab))
 
     return model
