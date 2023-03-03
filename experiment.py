@@ -71,57 +71,68 @@ class Experiment(object):
 
     # Main method to run your experiment. Should be self-explanatory.
     def run(self):
+        import warnings
+        warnings.filterwarnings(action="ignore", category=UserWarning)
         start_epoch = self.__current_epoch
         for epoch in range(start_epoch, self.__epochs):  # loop over the dataset multiple times
             start_time = datetime.now()
             self.__current_epoch = epoch
             train_loss = self.__train()
-            val_loss = self.__val()
-            self.__record_stats(train_loss, val_loss)
-            self.__log_epoch_stats(start_time)
-            self.__save_model()
+            # val_loss = self.__val()
+            # self.__record_stats(train_loss, val_loss)
+            # self.__log_epoch_stats(start_time)
+            # self.__save_model()
 
     # TODO: Perform one training iteration on the whole dataset and return loss value
     def __train(self):
         device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         self.__model.train()
-        training_loss = 0
-
-        x=  next(iter(self.__train_loader))
-        print(x[0].shape)
-        print(x[1].shape)
-
-        self.__optimizer.zero_grad()
-
-        # both inputs and labels have to reside in the same device as the model's
-        inputs =  x[0].to(device)
-        labels =   x[1].to(device)
-
-        outputs =  self.__model.forward(inputs, labels) # TODO  Compute outputs. we will not need to transfer the output, it will be automatically in the same device as the model's!
-        loss =  self.__criterion(outputs, labels)
-        
-
-
-
-
+        training_loss = []
 
         # Iterate over the data, implement the training function
-        # for i, (images, captions, _) in enumerate(self.__train_loader):
-        #     raise NotImplementedError()
+        for i, (images, captions, _) in enumerate(self.__train_loader):
+            self.__optimizer.zero_grad()
 
-        return training_loss
+            # both inputs and labels have to reside in the same device as the model's
+            inputs =  images.to(device)
+            labels =   captions.to(device)
+
+            outputs =  self.__model.forward(inputs, labels) # TODO  Compute outputs. we will not need to transfer the output, it will be automatically in the same device as the model's!
+
+            loss =  self.__criterion(outputs.view(-1, 14463), labels.contiguous().view(-1))
+            training_loss.append(loss)
+
+
+        print(np.mean(training_loss))
+        return np.mean(training_loss)
 
     # TODO: Perform one Pass on the validation set and return loss value. You may also update your best model here.
     def __val(self):
         self.__model.eval()
-        val_loss = 0
+        device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-        with torch.no_grad():
-            for i, (images, captions, _) in enumerate(self.__val_loader):
-                raise NotImplementedError()
+        self.__model.train()
+        val_loss = []
 
-        return val_loss
+        # Iterate over the data, implement the training function
+        for i, (images, captions, _) in enumerate(self.__val_loader):
+            self.__optimizer.zero_grad()
+
+            # both inputs and labels have to reside in the same device as the model's
+            inputs =  images.to(device)
+            labels =   captions.to(device)
+
+            outputs =  self.__model.forward(inputs, labels) # TODO  Compute outputs. we will not need to transfer the output, it will be automatically in the same device as the model's!
+
+            loss =  self.__criterion(outputs.view(-1, 14463), labels.contiguous().view(-1))
+            val_loss.append(loss)
+
+
+        self.__model.train()
+        print(np.mean(val_loss))
+        return np.mean(val_loss)
+
 
     # TODO: Implement your test function here. Generate sample captions and evaluate loss and
     #  bleu scores using the best model. Use utility functions provided to you in caption_utils.
