@@ -56,13 +56,14 @@ class TransferLearningResNet34(nn.Module):
             # inputs = torch.cat([x, captions], dim=2)  # shape (batch_size, max_caption_length, 512)
             # inputs = captions
 
-            hidden_state = torch.zeros((captions.size(0), self.hidden_size))
-            cell_state = torch.zeros((captions.size(0), self.hidden_size))
+            device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+            hidden_state = torch.zeros((captions.size(0), self.hidden_size)).to(device)
+            cell_state = torch.zeros((captions.size(0), self.hidden_size)).to(device)
 
             outputs = torch.empty((captions.size(0), captions.size(1), self.vocab_size))
-            print("hidden state shape",hidden_state.shape)
-            print("cell state shape", cell_state.shape)
-            print("x", x.shape)
+           
+
+
             hidden_state, cell_state = self.lstm_cell(x,(hidden_state,cell_state))
 
 

@@ -40,7 +40,8 @@ class Experiment(object):
         self.__model = get_model(config_data, self.__vocab)
 
         # TODO: Set these Criterion and Optimizers Correctly
-        self.__criterion =  nn.NLLLoss()
+        device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.__criterion =  nn.NLLLoss().to(device)
         self.__optimizer =  optim.Adam(self.__model.parameters(), lr=0.002)
 
         self.__init_model()
@@ -86,7 +87,7 @@ class Experiment(object):
     # TODO: Perform one training iteration on the whole dataset and return loss value
     def __train(self):
         device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
+        self.__model == self.__model.to(device)
         self.__model.train()
         training_loss = []
 
@@ -97,9 +98,10 @@ class Experiment(object):
             # both inputs and labels have to reside in the same device as the model's
             inputs =  images.to(device)
             labels =   captions.to(device)
+            
+            outputs =  self.__model.forward(inputs, labels).to(device) # TODO  Compute outputs. we will not need to transfer the output, it will be automatically in the same device as the model's!
 
-            outputs =  self.__model.forward(inputs, labels) # TODO  Compute outputs. we will not need to transfer the output, it will be automatically in the same device as the model's!
-
+            
             loss =  self.__criterion(outputs.view(-1, 14463), labels.contiguous().view(-1))
             training_loss.append(loss)
 
@@ -109,6 +111,8 @@ class Experiment(object):
 
     # TODO: Perform one Pass on the validation set and return loss value. You may also update your best model here.
     def __val(self):
+        device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.__model == self.__model.to(device)
         self.__model.eval()
         device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
