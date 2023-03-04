@@ -8,9 +8,9 @@
     "test_annotation_file_path": "./data/annotations/captions_val2014.json",
     "images_root_dir": "./data/images/",
     "vocabulary_threshold": 2,
-    "img_size": 256,
-    "batch_size": 64,
-    "num_workers": 4
+    "img_size": 224,
+    "batch_size": 32,
+    "num_workers": 0
   },
   "experiment": {
     "num_epochs": 10,

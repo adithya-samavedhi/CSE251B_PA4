@@ -36,7 +36,7 @@ class TransferLearningResNet34(nn.Module):
         self.lstm = nn.LSTM(input_size=256, hidden_size=256, num_layers=2, batch_first=True)
         self.fc = nn.Linear(256, self.vocab_size)
         self.softmax = nn.Softmax(dim=2)
-        self.lstm_cell = nn.LSTMCell(256,256)
+        self.lstm_cell = nn.RNNCell(256,256)
         self.hidden_size = hidden_dim
 
 
@@ -59,17 +59,17 @@ class TransferLearningResNet34(nn.Module):
             device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 #             device = torch.device("cpu")
             hidden_state = torch.zeros((captions.size(0), self.hidden_size)).to(device)
-            cell_state = torch.zeros((captions.size(0), self.hidden_size)).to(device)
+#             cell_state = torch.zeros((captions.size(0), self.hidden_size)).to(device)
 
             outputs = torch.empty((captions.size(0), captions.size(1), self.vocab_size))
            
 
 
-            hidden_state, cell_state = self.lstm_cell(x,(hidden_state,cell_state))
+            hidden_state = self.lstm_cell(x,hidden_state)
 
 
             for t in range(captions.size(1)-1):
-                hidden_state, cell_state = self.lstm_cell(captions[:,t,:], (hidden_state,cell_state))
+                hidden_state = self.lstm_cell(captions[:,t,:], hidden_state)
 
                 outputs[:,t,:] = self.fc(hidden_state)
 
@@ -84,12 +84,11 @@ class TransferLearningResNet34(nn.Module):
             inputs = captions
 
             hidden_state = torch.zeros((captions.size(0), self.hidden_size))
-            cell_state = torch.zeros((captions.size(0), self.hidden_size))
             outputs = torch.empty((captions.size(0), captions.size(1), self.vocab_size))
 
-            hidden_state, cell_state = self.lstm_cell(x, (hidden_state, cell_state))
+            hidden_state = self.lstm_cell(x, (hidden_state, cell_state))
             for t in range(captions.size(1) - 1):
-                hidden_state, cell_state = self.lstm_cell(outputs[:, t, :], (hidden_state, cell_state))
+                hidden_state = self.lstm_cell(outputs[:, t, :], (hidden_state, cell_state))
 
                 outputs[:, t+1, :] = self.fc(hidden_state)
 
