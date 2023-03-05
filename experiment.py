@@ -42,8 +42,8 @@ class Experiment(object):
         # TODO: Set these Criterion and Optimizers Correctly
         device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 #         device = torch.device("cpu")
-        self.__criterion =  nn.NLLLoss().to(device)
-        self.__optimizer =  optim.Adam(self.__model.parameters(), lr=0.002)
+        self.__criterion =  nn.CrossEntropyLoss().to(device)
+        self.__optimizer =  optim.Adam(self.__model.parameters(), lr=config_data['experiment']['learning_rate'])
 
         self.__init_model()
 
@@ -80,6 +80,7 @@ class Experiment(object):
             start_time = datetime.now()
             self.__current_epoch = epoch
             train_loss = self.__train()
+            print(f"Epoch {epoch+1} loss is {train_loss} perplexity is {np.exp(train_loss)}")
             # val_loss = self.__val()
             # self.__record_stats(train_loss, val_loss)
             # self.__log_epoch_stats(start_time)
@@ -88,7 +89,7 @@ class Experiment(object):
     # TODO: Perform one training iteration on the whole dataset and return loss value
     def __train(self):
         device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#         device = torch.device("cpu")
+        vocab_size = len(self.__vocab)
         self.__model == self.__model.to(device)
         self.__model.train()
         training_loss = []
@@ -97,21 +98,25 @@ class Experiment(object):
         for i, (images, captions, _) in enumerate(self.__train_loader):
 #             print(images.shape)
 #             print(captions.shape)
-            print(f"Batch Number {i+1}")
+#             print(f"Batch Number {i+1}")
             self.__optimizer.zero_grad()
 
             # both inputs and labels have to reside in the same device as the model's
             inputs =  images.to(device)
             labels =   captions.to(device)
             
-            outputs =  self.__model.forward(inputs, labels).to(device) # TODO  Compute outputs. we will not need to transfer the output, it will be automatically in the same device as the model's!
+            captions_target = captions[:, 1:].to(device)
+            captions_train = captions[:, :captions.shape[1]-1].to(device)
+            
+            outputs =  self.__model.forward(inputs, captions_train).to(device) # TODO  Compute outputs. we will not need to transfer the output, it will be automatically in the same device as the model's!
 
             
-            loss =  self.__criterion(outputs.view(-1, 14463), labels.contiguous().view(-1))
-            training_loss.append(loss)
+            loss =  self.__criterion(outputs.view(-1, vocab_size), captions_target.contiguous().view(-1))
+            loss.backward()
+            self.__optimizer.step()
+            training_loss.append(loss.item())
 
-
-        print(np.mean(training_loss))
+        
         return np.mean(training_loss)
 
     # TODO: Perform one Pass on the validation set and return loss value. You may also update your best model here.

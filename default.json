@@ -9,7 +9,7 @@
     "images_root_dir": "./data/images/",
     "vocabulary_threshold": 2,
     "img_size": 224,
-    "batch_size": 32,
+    "batch_size": 64,
     "num_workers": 0
   },
   "experiment": {

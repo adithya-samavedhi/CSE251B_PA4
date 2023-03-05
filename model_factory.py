@@ -1,5 +1,5 @@
 # Build and return the model here based on the configuration.
-from rnnbaseline import TransferLearningResNet34
+from baseline import TransferLearningResNet34
 def get_model(config_data, vocab):
     hidden_size = config_data['model']['hidden_size']
     embedding_size = config_data['model']['embedding_size']

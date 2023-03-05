@@ -26,6 +26,9 @@ class TransferLearningResNet34(nn.Module):
         self.vocab_size = vocab_size
         self.embed_size = embedding_size
         self.hidden_dim = hidden_dim
+        self.hidden_size = hidden_dim
+        
+        print(self.vocab_size)
 
         resnet34 = models.resnet34(pretrained=True)
         self.resnet34 = nn.Sequential(*list(resnet34.children())[:-1])
@@ -37,7 +40,6 @@ class TransferLearningResNet34(nn.Module):
         self.fc = nn.Linear(256, self.vocab_size)
         self.softmax = nn.Softmax(dim=2)
         self.lstm_cell = nn.LSTMCell(256,256)
-        self.hidden_size = hidden_dim
 
 
     def forward(self, x, captions=None):
@@ -57,14 +59,10 @@ class TransferLearningResNet34(nn.Module):
             # inputs = captions
 
             device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#             device = torch.device("cpu")
             hidden_state = torch.zeros((captions.size(0), self.hidden_size)).to(device)
             cell_state = torch.zeros((captions.size(0), self.hidden_size)).to(device)
 
             outputs = torch.empty((captions.size(0), captions.size(1), self.vocab_size))
-           
-
-
             hidden_state, cell_state = self.lstm_cell(x,(hidden_state,cell_state))
 
 

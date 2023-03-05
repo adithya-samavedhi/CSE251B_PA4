@@ -40,8 +40,7 @@ def get_coco_dataloader(img_ids_file_path, imgs_root_dir, annotation_file_path, 
     with open(img_ids_file_path, 'r') as f:
         reader = csv.reader(f)
         img_ids = list(reader)
-
-    img_ids = [int(i) for i in img_ids[0]]
+    img_ids = [int(i) for i in img_ids[0][:500]]
 
     ann_ids = [coco_obj.imgToAnns[img_ids[i]][j]['id'] for i in range(0, len(img_ids)) for j in
                range(0, len(coco_obj.imgToAnns[img_ids[i]]))]
@@ -51,6 +50,13 @@ def get_coco_dataloader(img_ids_file_path, imgs_root_dir, annotation_file_path, 
                           ids=ann_ids,
                           vocab=vocabulary,
                           img_size=config_data['dataset']['img_size'])
+#     print(dataset[0])
+    
+    print(f"len of dataset is {len(dataset)}")
+#     new_len = (6*len(dataset))//10
+#     print(new_len)
+#     dataset = dataset[:new_len]
+#     print(f"len of dataset is {len(dataset)}")
     return DataLoader(dataset=dataset,
                       batch_size=config_data['dataset']['batch_size'],
                       shuffle=True,
