@@ -98,7 +98,7 @@ class Experiment(object):
         for i, (images, captions, _) in enumerate(self.__train_loader):
 #             print(images.shape)
 #             print(captions.shape)
-#             print(f"Batch Number {i+1}")
+            print(f"Batch Number {i+1}")
             self.__optimizer.zero_grad()
 
             # both inputs and labels have to reside in the same device as the model's
