@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from datetime import datetime
 import torch.optim as optim
-
+from tqdm import tqdm
 from caption_utils import *
 from constants import ROOT_STATS_DIR
 from dataset_factory import get_datasets
@@ -34,7 +34,9 @@ class Experiment(object):
         self.__current_epoch = 0
         self.__training_losses = []
         self.__val_losses = []
-        self.__best_model = None  # Save your best model in this field and use this in test method.
+        self.__best_model = None # Save your best model in this field and use this in test method.
+        
+        self.__inference_max_len = config_data['generation']['max_length']
 
         # Init Model
         self.__model = get_model(config_data, self.__vocab)
@@ -48,7 +50,7 @@ class Experiment(object):
         self.__init_model()
 
         # Load Experiment Data if available
-        # self.__load_experiment()
+#         self.__load_experiment()
 
     # Loads the experiment data if exists to resume training from last saved checkpoint.
     def __load_experiment(self):
@@ -76,15 +78,17 @@ class Experiment(object):
         import warnings
         warnings.filterwarnings(action="ignore", category=UserWarning)
         start_epoch = self.__current_epoch
-        for epoch in range(start_epoch, self.__epochs):  # loop over the dataset multiple times
+        for epoch in tqdm(range(start_epoch, self.__epochs)):  # loop over the dataset multiple times
             start_time = datetime.now()
             self.__current_epoch = epoch
             train_loss = self.__train()
             print(f"Epoch {epoch+1} loss is {train_loss} perplexity is {np.exp(train_loss)}")
-            # val_loss = self.__val()
-            # self.__record_stats(train_loss, val_loss)
+            val_loss = self.__val()
+            print(f"Epoch {epoch+1} Validation loss is {val_loss} perplexity is {np.exp(val_loss)}")
+            
+#             self.__record_stats(train_loss, val_loss)
             # self.__log_epoch_stats(start_time)
-            # self.__save_model()
+            self.__save_model()
 
     # TODO: Perform one training iteration on the whole dataset and return loss value
     def __train(self):
@@ -96,22 +100,18 @@ class Experiment(object):
 
         # Iterate over the data, implement the training function
         for i, (images, captions, _) in enumerate(self.__train_loader):
-#             print(images.shape)
-#             print(captions.shape)
-            print(f"Batch Number {i+1}")
             self.__optimizer.zero_grad()
 
             # both inputs and labels have to reside in the same device as the model's
             inputs =  images.to(device)
             labels =   captions.to(device)
             
-            captions_target = captions[:, 1:].to(device)
-            captions_train = captions[:, :captions.shape[1]-1].to(device)
+        
             
-            outputs =  self.__model.forward(inputs, captions_train).to(device) # TODO  Compute outputs. we will not need to transfer the output, it will be automatically in the same device as the model's!
+            outputs =  self.__model.forward(inputs, labels).to(device)
 
             
-            loss =  self.__criterion(outputs.view(-1, vocab_size), captions_target.contiguous().view(-1))
+            loss =  self.__criterion(outputs.view(-1, vocab_size), labels.contiguous().view(-1))
             loss.backward()
             self.__optimizer.step()
             training_loss.append(loss.item())
@@ -121,54 +121,85 @@ class Experiment(object):
 
     # TODO: Perform one Pass on the validation set and return loss value. You may also update your best model here.
     def __val(self):
-        device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#         device = torch.device("cpu")
+        device =  torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        vocab_size = len(self.__vocab)
         self.__model == self.__model.to(device)
-        self.__model.eval()
-        device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#         device = torch.device("cpu")
-
         self.__model.train()
-        val_loss = []
+        validation_loss = []
 
         # Iterate over the data, implement the training function
-        for i, (images, captions, _) in enumerate(self.__val_loader):
+        for i, (images, captions, _) in enumerate(self.__train_loader):
             self.__optimizer.zero_grad()
 
             # both inputs and labels have to reside in the same device as the model's
             inputs =  images.to(device)
             labels =   captions.to(device)
+            
+            
+            
+            outputs =  self.__model.forward(inputs, labels).to(device) 
 
-            outputs =  self.__model.forward(inputs, labels) # TODO  Compute outputs. we will not need to transfer the output, it will be automatically in the same device as the model's!
+            
+            loss =  self.__criterion(outputs.view(-1, vocab_size), labels.contiguous().view(-1))
+            validation_loss.append(loss.item())
 
-            loss =  self.__criterion(outputs.view(-1, 14463), labels.contiguous().view(-1))
-            val_loss.append(loss)
-
-
-        self.__model.train()
-        print(np.mean(val_loss))
-        return np.mean(val_loss)
+        
+        return np.mean(validation_loss)
+        
 
 
     # TODO: Implement your test function here. Generate sample captions and evaluate loss and
     #  bleu scores using the best model. Use utility functions provided to you in caption_utils.
     #  Note than you'll need image_ids and COCO object in this case to fetch all captions to generate bleu scores.
     def test(self):
+        vocab_size = len(self.__vocab)
+        state_dict = torch.load(os.path.join(self.__experiment_dir, 'latest_model.pt'))
+        self.__model.load_state_dict(state_dict['model'])
+        self.__optimizer.load_state_dict(state_dict['optimizer'])
+        
         self.__model.eval()
         test_loss = 0
         bleu1 = 0
         bleu4 = 0
-
+        device =  torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        test_loss = []
+        
         with torch.no_grad():
             for iter, (images, captions, img_ids) in enumerate(self.__test_loader):
-                raise NotImplementedError()
+                inputs = images.to(device)
+                captions = captions.to(device)
+                ground_captions = [[i['caption'] for i in self.__coco_test.imgToAnns[idx]] for idx in img_ids]
+                
+                inputs =  images.to(device)
+                labels =   captions.to(device)
 
-        result_str = "Test Performance: Loss: {}, Perplexity: {}, Bleu1: {}, Bleu4: {}".format(test_loss,
+
+
+                outputs =  self.__model.forward(inputs, labels).to(device) 
+
+
+                loss =  self.__criterion(outputs.view(-1, vocab_size), labels.contiguous().view(-1))
+            
+                generate_captions = self.__model.generate_caption(inputs,deterministic=False,temperature=0.1)
+                
+                
+                test_loss.append(loss.item())
+
+                bleu1_val += self.calc_bleu1(ground_captions, generate_captions)
+                bleu4_val += self.calc_bleu4(ground_captions, generate_captions)
+                
+                
+        final_test_loss = np.mean(test_loss)
+        bleu1_val = bleu1_val / len(self.__test_loader)
+        bleu4_val = bleu4_val / len(self.__test_loader)
+
+
+        result_str = "Test Performance: Loss: {}, Perplexity: {}, Bleu1: {}, Bleu4: {}".format(final_test_loss,
                                                                                                bleu1,
                                                                                                bleu4)
         self.__log(result_str)
 
-        return test_loss, bleu1, bleu4
+        return final_test_loss, bleu1, bleu4
 
     def __save_model(self):
         root_model_path = os.path.join(self.__experiment_dir, 'latest_model.pt')

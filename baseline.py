@@ -3,12 +3,13 @@ import pickle
 import torch
 import torch.nn as nn
 import torchvision.models as models
+
 from torchvision import transforms, models
 
 #ToDO Fill in the __ values
 class TransferLearningResNet34(nn.Module):
 
-    def __init__(self, n_class, hidden_dim, vocab_size, embedding_size):
+    def __init__(self, n_class, hidden_dim, vocab, embedding_size):
         # super().__init__()
         # self.hidden_dim = hidden_dim
         # self.vocab_size = vocab_size
@@ -23,7 +24,8 @@ class TransferLearningResNet34(nn.Module):
         # self.softmax = nn.Softmax(dim=1)
 
         super().__init__()
-        self.vocab_size = vocab_size
+        self.vocab = vocab
+        self.vocab_size = len(vocab)
         self.embed_size = embedding_size
         self.hidden_dim = hidden_dim
         self.hidden_size = hidden_dim
@@ -55,6 +57,36 @@ class TransferLearningResNet34(nn.Module):
         hiddens, c = self.lstm(embeddings)
         outputs = self.fc(hiddens)
         return outputs
+    
+        ## Greedy search 
+    def generate_caption(self, inputs, deterministic=False, temperature=0.1):
+        " accepts pre-processed image tensor (inputs) and returns predicted sentence (list of tensor ids of length max_len) "
+        x = self.resnet34(inputs)  # shape (batch_size, 512, 1, 1)
+        x = x.squeeze()  # shape (batch_size, 512)
+        x = self.linear(x)
+        image_features = x.unsqueeze(1)
+        
+        output = []
+        batch_size = inputs.shape[0] # batch_size is 1 at inference, inputs shape : (1, 1, embed_size)
+#         hidden = self.init_hidden(batch_size) # Get initial hidden state of the LSTM
+    
+        while True:
+            lstm_out, hidden = self.lstm(image_features) # lstm_out shape : (1, 1, hidden_size)
+            outputs = self.fc(lstm_out)  # outputs shape : (1, 1, vocab_size)
+            outputs = outputs.squeeze(1) # outputs shape : (1, vocab_size)
+            _, max_indice = torch.max(outputs, dim=1) # predict the most likely next word, max_indice shape : (1)
+            
+            output.append(max_indice.cpu().numpy()[0].item()) # storing the word predicted
+            
+            if ("<end>" == self.vocab.idx2word[max_indice.cpu().numpy()[0].item()]):
+                # We predicted the <end> word, so there is no further prediction to do
+                break
+            
+            ## Prepare to embed the last predicted word to be the new input of the lstm
+            inputs = self.embedding(max_indice) # inputs shape : (1, embed_size)
+            inputs = inputs.unsqueeze(1) # inputs shape : (1, 1, embed_size)
+            
+        return output
 
 
 
