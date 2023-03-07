@@ -17,6 +17,7 @@
     "learning_rate": 5e-4
   },
   "model": {
+     "architecture": "architecture 2",
     "hidden_size": 256,
     "embedding_size": 300,
     "model_type": "RNN",

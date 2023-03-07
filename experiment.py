@@ -85,7 +85,7 @@ class Experiment(object):
             val_loss = self.__val()
             print(f"Epoch {epoch+1} Validation loss is {val_loss} perplexity is {np.exp(val_loss)}")
             
-#             self.__record_stats(train_loss, val_loss)
+            self.__record_stats(train_loss, val_loss)
             # self.__log_epoch_stats(start_time)
             self.__save_model()
 
@@ -127,8 +127,8 @@ class Experiment(object):
             self.__optimizer.zero_grad()
 
             # both inputs and labels have to reside in the same device as the model's
-            inputs =  images.to(device)
-            labels =   captions.to(device)
+            inputs =  images.to(self.device)
+            labels =   captions.to(self.device)
             
           
             outputs =  self.__model.forward(inputs, labels)
