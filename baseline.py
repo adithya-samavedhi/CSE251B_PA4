@@ -28,7 +28,6 @@ class TransferLearningResNet34(nn.Module):
         self.vocab_size = len(vocab)
         self.embed_size = embedding_size
         self.hidden_dim = hidden_dim
-        self.hidden_size = hidden_dim
         
         print(self.vocab_size)
 
@@ -36,12 +35,11 @@ class TransferLearningResNet34(nn.Module):
         self.resnet34 = nn.Sequential(*list(resnet34.children())[:-1])
         for param in self.resnet34.parameters():
             param.requires_grad = False
-        self.linear = nn.Linear(512, 256)
-        self.embedding = nn.Embedding(self.vocab_size, 256)
-        self.lstm = nn.LSTM(input_size=256, hidden_size=256, num_layers=2, batch_first=True)
-        self.fc = nn.Linear(256, self.vocab_size)
+        self.linear = nn.Linear(512, self.embed_size)
+        self.embedding = nn.Embedding(self.vocab_size, self.embed_size)
+        self.lstm = nn.LSTM(input_size=self.embed_size, hidden_size=self.hidden_dim, num_layers=2, batch_first=True)
+        self.fc = nn.Linear(self.hidden_dim, self.vocab_size)
         self.softmax = nn.Softmax(dim=2)
-        self.lstm_cell = nn.LSTMCell(256,256)
 
 
     def forward(self, x, captions=None):
