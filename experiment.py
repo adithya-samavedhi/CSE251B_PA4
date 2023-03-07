@@ -40,11 +40,10 @@ class Experiment(object):
 
         # Init Model
         self.__model = get_model(config_data, self.__vocab)
+        self.device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        
 
-        # TODO: Set these Criterion and Optimizers Correctly
-        device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#         device = torch.device("cpu")
-        self.__criterion =  nn.CrossEntropyLoss().to(device)
+        self.__criterion =  nn.CrossEntropyLoss().to(self.device)
         self.__optimizer =  optim.Adam(self.__model.parameters(), lr=config_data['experiment']['learning_rate'])
 
         self.__init_model()
@@ -90,28 +89,26 @@ class Experiment(object):
             # self.__log_epoch_stats(start_time)
             self.__save_model()
 
-    # TODO: Perform one training iteration on the whole dataset and return loss value
     def __train(self):
-        device =   torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         vocab_size = len(self.__vocab)
-        self.__model == self.__model.to(device)
         self.__model.train()
         training_loss = []
 
         # Iterate over the data, implement the training function
-        for i, (images, captions, _) in enumerate(self.__train_loader):
+        for i, (images, captions, _) in tqdm(enumerate(self.__train_loader)):
             self.__optimizer.zero_grad()
 
             # both inputs and labels have to reside in the same device as the model's
-            inputs =  images.to(device)
-            labels =   captions.to(device)
-            
-        
-            
-            outputs =  self.__model.forward(inputs, labels).to(device)
+            inputs =  images.to(self.device)
+            labels=captions
+            labels =   labels.to(self.device)
+            outputs =  self.__model.forward(inputs, labels)
 
             
-            loss =  self.__criterion(outputs.view(-1, vocab_size), labels.contiguous().view(-1))
+#             loss =  self.__criterion(outputs.view(-1, vocab_size), labels.contiguous().view(-1))
+            loss = self.__criterion(torch.flatten(outputs, start_dim=0, end_dim=1),
+                                    torch.flatten(labels, start_dim=0, end_dim=1))
+    
             loss.backward()
             self.__optimizer.step()
             training_loss.append(loss.item())
@@ -121,9 +118,7 @@ class Experiment(object):
 
     # TODO: Perform one Pass on the validation set and return loss value. You may also update your best model here.
     def __val(self):
-        device =  torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         vocab_size = len(self.__vocab)
-        self.__model == self.__model.to(device)
         self.__model.train()
         validation_loss = []
 
@@ -135,9 +130,8 @@ class Experiment(object):
             inputs =  images.to(device)
             labels =   captions.to(device)
             
-            
-            
-            outputs =  self.__model.forward(inputs, labels).to(device) 
+          
+            outputs =  self.__model.forward(inputs, labels)
 
             
             loss =  self.__criterion(outputs.view(-1, vocab_size), labels.contiguous().view(-1))

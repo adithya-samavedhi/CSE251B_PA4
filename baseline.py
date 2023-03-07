@@ -10,18 +10,6 @@ from torchvision import transforms, models
 class TransferLearningResNet34(nn.Module):
 
     def __init__(self, n_class, hidden_dim, vocab, embedding_size):
-        # super().__init__()
-        # self.hidden_dim = hidden_dim
-        # self.vocab_size = vocab_size
-        # self.n_class = n_class
-        # resnet50 = models.resnet50(pretrained=True)
-        # self.relu = nn.ReLU(inplace=True)
-        # self.resnet50 = nn.Sequential(*list(resnet50.children())[:-1])
-        # self.linear = nn.Linear(self.hidden_dim, 512)
-        # self.embedding = nn.Embedding(self.vocab_size, 300)
-        # self.lstm = nn.LSTM(300, 512, 2)
-        # self.output_linear = nn.Linear(512, self.vocab_size)
-        # self.softmax = nn.Softmax(dim=1)
 
         super().__init__()
         self.vocab = vocab
