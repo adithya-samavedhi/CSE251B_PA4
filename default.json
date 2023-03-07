@@ -20,6 +20,7 @@
     "hidden_size": 256,
     "embedding_size": 300,
     "model_type": "RNN",
+      "num_layers":2,
     "keep_image": false
   },
   "generation": {
