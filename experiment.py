@@ -10,6 +10,8 @@ from dataset_factory import get_datasets
 from file_utils import *
 from model_factory import get_model
 import torch.nn as nn
+import nltk
+import string
 
 # Class to encapsulate a neural experiment.
 # The boilerplate code to setup the experiment, log stats, checkpoints and plotting have been provided to you.
@@ -45,11 +47,12 @@ class Experiment(object):
 
         self.__criterion =  nn.CrossEntropyLoss().to(self.device)
         self.__optimizer =  optim.Adam(self.__model.parameters(), lr=config_data['experiment']['learning_rate'])
+        self.generation_config = config_data['generation']
 
         self.__init_model()
 
         # Load Experiment Data if available
-#         self.__load_experiment()
+        self.__load_experiment()
 
     # Loads the experiment data if exists to resume training from last saved checkpoint.
     def __load_experiment(self):
@@ -62,6 +65,7 @@ class Experiment(object):
 
             state_dict = torch.load(os.path.join(self.__experiment_dir, 'latest_model.pt'))
             self.__model.load_state_dict(state_dict['model'])
+            print("Loaded saved model")
             self.__optimizer.load_state_dict(state_dict['optimizer'])
 
         else:
@@ -95,7 +99,7 @@ class Experiment(object):
         training_loss = []
 
         # Iterate over the data, implement the training function
-        for i, (images, captions, _) in tqdm(enumerate(self.__train_loader)):
+        for i, (images, captions, _) in tqdm(enumerate(self.__test_loader)):
             self.__optimizer.zero_grad()
 
             # both inputs and labels have to reside in the same device as the model's
@@ -103,7 +107,7 @@ class Experiment(object):
             labels=captions
             labels =   labels.to(self.device)
             outputs =  self.__model.forward(inputs, labels)
-
+#             print("outputs", outputs[:3])
             
 #             loss =  self.__criterion(outputs.view(-1, vocab_size), labels.contiguous().view(-1))
             loss = self.__criterion(torch.flatten(outputs, start_dim=0, end_dim=1),
@@ -146,6 +150,7 @@ class Experiment(object):
     #  bleu scores using the best model. Use utility functions provided to you in caption_utils.
     #  Note than you'll need image_ids and COCO object in this case to fetch all captions to generate bleu scores.
     def test(self):
+        print("Testing")
         vocab_size = len(self.__vocab)
         state_dict = torch.load(os.path.join(self.__experiment_dir, 'latest_model.pt'))
         self.__model.load_state_dict(state_dict['model'])
@@ -155,6 +160,7 @@ class Experiment(object):
         test_loss = 0
         bleu1 = 0
         bleu4 = 0
+        
         device =  torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         test_loss = []
         
@@ -172,25 +178,35 @@ class Experiment(object):
                 outputs =  self.__model.forward(inputs, labels).to(device) 
 
 
-                loss =  self.__criterion(outputs.view(-1, vocab_size), labels.contiguous().view(-1))
+                loss = self.__criterion(torch.flatten(outputs, start_dim=0, end_dim=1),
+                                    torch.flatten(labels, start_dim=0, end_dim=1))
             
-                generate_captions = self.__model.generate_caption(inputs,deterministic=False,temperature=0.1)
+#                 print(torch.flatten(outputs, start_dim=0, end_dim=1))
+#                 print('*'*100)
+#                 print(torch.flatten(labels, start_dim=0, end_dim=1))
+                generate_captions = self.__model.generate_caption(inputs,self.generation_config)
+                generate_captions = [' '.join(sentence) for sentence in generate_captions]
+#                 print(generate_captions)
+#                 print(ground_captions)
                 
                 
                 test_loss.append(loss.item())
 
-                bleu1_val += self.calc_bleu1(ground_captions, generate_captions)
-                bleu4_val += self.calc_bleu4(ground_captions, generate_captions)
+                bleu1 += self.bleu1(ground_captions, generate_captions)
                 
+                bleu4 += self.bleu4(ground_captions, generate_captions)
+                if iter % 10 ==0:
+                    print(loss.item(),bleu1,bleu4)
+                    print(f" generated captions: {generate_captions[:3]}")
+                    print(f" ground captions: {ground_captions[:3]}")
+                    
                 
         final_test_loss = np.mean(test_loss)
-        bleu1_val = bleu1_val / len(self.__test_loader)
-        bleu4_val = bleu4_val / len(self.__test_loader)
+        bleu1 = bleu1 / len(self.__test_loader)
+        bleu4 = bleu4 / len(self.__test_loader)
 
 
-        result_str = "Test Performance: Loss: {}, Perplexity: {}, Bleu1: {}, Bleu4: {}".format(final_test_loss,
-                                                                                               bleu1,
-                                                                                               bleu4)
+        result_str = f"Test Performance: Loss: {final_test_loss}, Bleu1: {bleu1}, Bleu4: {bleu4}"
         self.__log(result_str)
 
         return final_test_loss, bleu1, bleu4
@@ -237,3 +253,61 @@ class Experiment(object):
         plt.title(self.__name + " Stats Plot")
         plt.savefig(os.path.join(self.__experiment_dir, "stat_plot.png"))
         plt.show()
+        
+    def calc_bleu1(self, captions, generate_captions):
+        reference_captions = []
+        predicted_captions = []
+        for vec in captions:
+            reference_captions.append(self.sequences_to_words(vec))
+        for vec in generate_captions:
+            predicted_captions.append(self.vec_to_words(vec))
+        bleu_value = 0
+        for i in range(len(reference_captions)):
+            bleu_value += bleu1( reference_captions[i] , predicted_captions[i])
+        bleu_value /= len(reference_captions)
+        return bleu_value
+    
+    def calc_bleu4(self, captions, generate_captions):
+        reference_captions = []
+        predicted_captions = []
+        for vec in captions:
+            reference_captions.append(self.sequences_to_words(vec))
+        for vec in generate_captions:
+            predicted_captions.append(self.vec_to_words(vec))
+        bleu_value = 0
+        for i in range(len(reference_captions)):
+            bleu_value += bleu4( reference_captions[i] , predicted_captions[i])
+        
+        bleu_value /= len(reference_captions)
+        return bleu_value
+    
+    def sequences_to_words(self, captions):
+        words = []
+        for i in captions:
+            caption = nltk.word_tokenize(i)
+            tmp = []
+            for word in caption:
+                if word not in string.punctuation:
+                    tmp.append(word.lower())
+            words.append(tmp)
+        return words
+    
+    def vec_to_words(self, captions):
+        words = []
+        for i in captions:
+            if i > 3:
+                word = self.__vocab.idx2word[i.item()].lower()
+                if word not in string.punctuation:
+                    words.append(self.__vocab.idx2word[i.item()].lower())
+            if i == 2:
+                break
+        return words
+    
+    def bleu1(self, reference_captions, predicted_caption):
+        return 100 * sentence_bleu(reference_captions, predicted_caption,
+                               weights=(1, 0, 0, 0), smoothing_function=SmoothingFunction().method1)
+
+
+    def bleu4(self, reference_captions, predicted_caption):
+        return 100 * sentence_bleu(reference_captions, predicted_caption,
+                               weights=(0, 0, 0, 1), smoothing_function=SmoothingFunction().method1)

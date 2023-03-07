@@ -12,5 +12,5 @@ if __name__ == "__main__":
     print("Running Experiment: ", exp_name)
     exp = Experiment(exp_name)
     # exp.__train()
-    exp.run()
-#     exp.test()
+#     exp.run()
+    exp.test()
