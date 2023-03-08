@@ -9,11 +9,14 @@ from constants import ROOT_STATS_DIR
 from dataset_factory import get_datasets
 from file_utils import *
 from model_factory import get_model
+from pycocotools.coco import COCO
 import torch.nn as nn
 import nltk
 import string
 import matplotlib.pyplot as plt
 import os
+import warnings
+warnings.filterwarnings("ignore")
 
 # Class to encapsulate a neural experiment.
 # The boilerplate code to setup the experiment, log stats, checkpoints and plotting have been provided to you.
@@ -31,6 +34,9 @@ class Experiment(object):
         # Load Datasets
         self.__coco_test, self.__vocab, self.__train_loader, self.__val_loader, self.__test_loader = get_datasets(
             config_data)
+        
+        self.__train_caption = config_data['dataset']['training_annotation_file_path']
+        self.__coco_train = COCO(self.__train_caption)
 
         # Setup Experiment
         self.__generation_config = config_data['generation']
@@ -60,7 +66,7 @@ class Experiment(object):
         self.__init_model()
 
         # Load Experiment Data if available
-        self.__load_experiment()
+#         self.__load_experiment()
 
     # Loads the experiment data if exists to resume training from last saved checkpoint.
     def __load_experiment(self):
@@ -147,10 +153,11 @@ class Experiment(object):
         bleu4_val = 0
 
         # Iterate over the data, implement the training function
-        for i, (images, captions, _) in enumerate(self.__val_loader):
+        for i, (images, captions, img_ids) in enumerate(self.__val_loader):
             # both inputs and labels have to reside in the same device as the model's
             images =  images.to(self.__device)
             captions =   captions.to(self.__device)
+            ground_captions = [[i['caption'] for i in self.__coco_train.imgToAnns[idx]] for idx in img_ids]
 
             outputs =  self.__model.forward(images, captions[:,:-1])
 
@@ -164,18 +171,19 @@ class Experiment(object):
             bleu4_val += self.calc_bleu4(ground_captions, generate_captions)
             
             if i%100 == 0:
-                    print( self.vec_to_words(captions[0,:]) )
-#                     print( self.vec_to_words(pred_captions.argmax(dim=2)[0,:]) )
-                    print( self.vec_to_words(generate_captions[0,:]) )
-                    print(loss.item(),bleu1_val/(iter+1),bleu4_val/(iter+1))
+                    print(generate_captions)
+                    print( f"captions: {self.vec_to_words(captions[0,:])} ")
+                    if(len(generate_captions[0])>0):
+                        print(f"predicted_caption: {self.vec_to_words(generate_captions[0,:])}" )
+    
         
         bleu1_val = bleu1_val / len(self.__test_loader)
         bleu4_val = bleu4_val / len(self.__test_loader)
         
         result_str = "Validation Performance: Loss: {}, Bleu1: {}, Bleu4: {}".format(np.mean(validation_loss), bleu1_val, bleu4_val)
-
+        
+        print(result_str)
         self.__log(result_str)
-
         return np.mean(validation_loss), bleu1_val, bleu4_val
         
 

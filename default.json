@@ -13,11 +13,11 @@
     "num_workers": 20
   },
   "experiment": {
-    "num_epochs": 40,
+    "num_epochs": 20,
     "learning_rate": 5e-4
   },
   "model": {
-     "architecture": "architecture 1",
+     "architecture": "architecture 2",
     "hidden_size": 512,
     "embedding_size": 300,
     "model_type": "LSTM",
