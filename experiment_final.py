@@ -98,8 +98,8 @@ class Experiment(object):
             self.__current_epoch = epoch
             train_loss = self.__train()
             print(f"Epoch {epoch+1} loss is {train_loss} perplexity is {np.exp(train_loss)}")
-            val_loss = self.__val()
-            print(f"Epoch {epoch+1} Validation loss is {val_loss} perplexity is {np.exp(val_loss)}")
+            val_loss, bleu1_val, bleu4_val = self.__val()
+#             print(f"Epoch {epoch+1} Validation loss is {val_loss} perplexity is {np.exp(val_loss)}")
             
             self.__record_stats(train_loss, val_loss)
             self.__log_epoch_stats(start_time)
@@ -158,14 +158,25 @@ class Experiment(object):
                                     torch.flatten(captions, start_dim=0, end_dim=1))
             validation_loss.append(loss.item())
             
+            generate_captions = self.__model.generate_final(images, max_length=self.__max_length,
+                                                            stochastic=self.__stochastic, temp=self.__temperature)
+            bleu1_val += self.calc_bleu1(ground_captions, generate_captions)
+            bleu4_val += self.calc_bleu4(ground_captions, generate_captions)
+            
             if i%100 == 0:
-                    print(i)
-                    print(captions[0,:].shape)
                     print( self.vec_to_words(captions[0,:]) )
-                    print( self.vec_to_words(pred_captions.argmax(dim=2)[0,:]) )
+#                     print( self.vec_to_words(pred_captions.argmax(dim=2)[0,:]) )
                     print( self.vec_to_words(generate_captions[0,:]) )
+                    print(loss.item(),bleu1_val/(iter+1),bleu4_val/(iter+1))
+        
+        bleu1_val = bleu1_val / len(self.__test_loader)
+        bleu4_val = bleu4_val / len(self.__test_loader)
+        
+        result_str = "Validation Performance: Loss: {}, Bleu1: {}, Bleu4: {}".format(np.mean(validation_loss), bleu1_val, bleu4_val)
 
-        return np.mean(validation_loss)
+        self.__log(result_str)
+
+        return np.mean(validation_loss), bleu1_val, bleu4_val
         
 
 
@@ -354,9 +365,9 @@ class Experiment(object):
         return best_loss, best_iter, patience
     
     def plot_images(self,images,captions,generate_captions):
-        images = images[:10]
-        captions = captions[:10]
-        generate_captions = generate_captions[:10]
+        images = images[:25]
+        captions = captions[:25]
+        generate_captions = generate_captions[:25]
         
         print(images.shape)
         print(captions.shape)
