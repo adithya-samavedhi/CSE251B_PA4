@@ -39,12 +39,13 @@ class Architecture2(nn.Module):
                                         num_layers=self.num_layers, batch_first=True)
         self.fc = nn.Linear(self.hidden_dim, self.vocab_size)
         self.softmax = nn.Softmax(dim=2)
+        self.bn = nn.BatchNorm1d(self.embed_size)
 
 
     def forward(self, x, captions=None):
         x = self.resnet50(x)  # shape (batch_size, 512, 1, 1)
         x = x.reshape(x.size(0), -1)  # shape (batch_size, 512)
-        x = self.linear(x)  # shape (batch_size, 256)
+        x = self.bn(self.linear(x))  # shape (batch_size, 256)
 
         #x = x.view((x.shape[0], 1, x.shape[1]))
         captions = torch.cat((torch.zeros(captions.shape[0],1,dtype= torch.long).cuda(),captions),dim=1)
@@ -61,22 +62,24 @@ class Architecture2(nn.Module):
     def generate_final(self, x, max_length=100, stochastic = False, temp=0.1):
         x = self.resnet50(x)  # shape (batch_size, 512, 1, 1)
         x = x.reshape(x.size(0), -1)  # shape (batch_size, 512)
-        x = self.linear(x)  # shape (batch_size, 256)
+        x = self.bn(self.linear(x))  # shape (batch_size, 256)
 
         pred = torch.zeros((x.size(0), max_length), dtype=torch.long).cuda()
         x = x.unsqueeze(1).expand(-1, 1, -1)
 
         x_cat = torch.cat((x, self.embedding(pred[:, 0]).unsqueeze(1)), dim=2)
-
+        states = None
 
         for t in range(max_length):
-            hiddens, _ = self.decoder_unit(x_cat) # output dimension?
+            hiddens, states = self.decoder_unit(x_cat, states) # output dimension?
             outputs = self.fc(hiddens)
 
             if stochastic:
-                outputs = self.softmax(outputs/temp).reshape(outputs.size(0),-1)
+                outputs = F.softmax(outputs/temp, dim=-1).reshape(outputs.size(0),-1)
                 # batch_size * vocab_size
-                pred[:, t] = torch.multinomial(outputs.data, 1).view(-1)
+                outputs = Categorical(outputs) 
+                pred[:,t] = outputs.sample()
+#                 pred[:, t] = torch.multinomial(outputs.data, 1).view(-1)
             else:
                 #deterministic
                 pred[:, t] = torch.argmax(outputs, dim=2).view(-1)
