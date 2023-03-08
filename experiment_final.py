@@ -54,7 +54,9 @@ class Experiment(object):
         
 
         self.__criterion =  nn.CrossEntropyLoss().to(self.__device)
-        self.__optimizer =  optim.Adam(self.__model.parameters(), lr=config_data['experiment']['learning_rate'])
+#         self.__optimizer =  optim.Adam(self.__model.parameters(), lr=config_data['experiment']['learning_rate'])
+        self.__optimizer = torch.optim.Adam(params=filter(lambda p: p.requires_grad, self.__model.parameters()),
+                                            lr=config_data['experiment']['learning_rate'])
         self.generation_config = config_data['generation']
         
         self.__max_length = config_data['generation']['max_length']
@@ -62,7 +64,7 @@ class Experiment(object):
         self.__temperature = config_data['generation']['temperature']
         self.__is_early_stop = config_data["early_stop"]["is_early_stop"]
         self.__early_stop_epoch = config_data["early_stop"]['early_stopping_rounds']
-
+        
         self.__init_model()
 
         # Load Experiment Data if available
@@ -202,46 +204,82 @@ class Experiment(object):
         bleu1_val = 0
         bleu4_val = 0
         test_loss = 0
+        test_loss = []
+        b1, b4 = 0, 0
+        b1s = []
+        b4s = []
         
         with torch.no_grad():
-            for iter, (images, captions, img_ids) in enumerate(self.__train_loader):
+            for iter, (images, captions, img_ids) in enumerate(self.__test_loader):
                 images = images.to(self.__device)
                 captions = captions.to(self.__device)
                 
                 ground_captions = [[i['caption'] for i in self.__coco_test.imgToAnns[idx]] for idx in img_ids]
-
                 
                 outputs =  self.__model.forward(images, captions[:,:-1])
 
                 loss = self.__criterion(torch.flatten(outputs, start_dim=0, end_dim=1),
                                     torch.flatten(captions, start_dim=0, end_dim=1))
-                test_loss += loss.item()
+                test_loss.append(loss.item())
     
                 generate_captions = self.__model.generate_final(images, max_length=self.__max_length,
                                                             stochastic=self.__stochastic, temp=self.__temperature)
-                bleu1_val += self.calc_bleu1(ground_captions, generate_captions)
-                bleu4_val += self.calc_bleu4(ground_captions, generate_captions)
-                
-                if iter % 100 ==0:
-                    print(loss.item(),bleu1_val/(iter+1),bleu4_val/(iter+1))
-                    print(captions[0,:].shape)
-                    self.plot_images(images,captions,generate_captions)
-                    print( self.vec_to_words(captions[0,:]) )
-#                     print( self.vec_to_words(pred_captions.argmax(dim=2)[0,:]) )
-                    print( self.vec_to_words(generate_captions[0,:]) )
-                    #print(f" generated captions: {generate_captions[:3]}")
-                    #print(f" ground captions: {ground_captions[:3]}")
-                    
-                
-        test_loss = test_loss / len(self.__test_loader)
-        bleu1_val = bleu1_val / len(self.__test_loader)
-        bleu4_val = bleu4_val / len(self.__test_loader)
-        
-        result_str = "Test Performance: Loss: {}, Bleu1: {}, Bleu4: {}".format(test_loss, bleu1_val, bleu4_val)
+                gen_captions = self.__vocab.decode(generate_captions)
 
+                # get BLEU
+                for b in range(images.size(0)):
+                    # print(img_ids[b])
+                    ground_truth = self.__coco_test.imgToAnns[img_ids[b]]
+                    refs = [dict['caption'] for dict in ground_truth]
+                    ref_tokens = [nltk.tokenize.word_tokenize(s.lower()) for s in refs]
+                    # print(refs)
+                    # print(gen_captions[b])
+                    b1s.append(bleu1(ref_tokens, gen_captions[b]))
+                    b4s.append(bleu4(ref_tokens, gen_captions[b]))
+
+                    if iter % 50 == 0 and b == 0:
+                        print(ground_truth)
+                        print(gen_captions[b])
+                        print(b1s[-1], b4s[-1])
+                        print('-' * 20)
+
+        #                     break
+        #                 break
+        l, b1, b4 = np.mean(test_loss), np.mean(b1s), np.mean(b4s)
+        # PPL: https://huggingface.co/docs/transformers/perplexity
+        result_str = "Test Performance: Loss: {}, Perplexity: {}, Bleu1: {}, Bleu4: {}".format(l,
+                                                                                               np.exp(l),
+                                                                                               b1,
+                                                                                               b4)
         self.__log(result_str)
 
-        return test_loss, bleu1_val, bleu4_val
+        return test_loss, b1, b4
+#                 bleu1_val += self.calc_bleu1(ground_captions, generate_captions)
+#                 bleu4_val += self.calc_bleu4(ground_captions, generate_captions)
+                
+#                 if iter % 200 ==0:
+#                     print(loss.item(),bleu1_val/(iter+1),bleu4_val/(iter+1))
+#                     print(captions[0,:].shape)
+#                     self.plot_images(images,captions,generate_captions)
+#                     print( self.vec_to_words(captions[0,:]) )
+# #                     print( self.vec_to_words(pred_captions.argmax(dim=2)[0,:]) )
+#                     print( self.vec_to_words(generate_captions[0,:]) )
+#                     #print(f" generated captions: {generate_captions[:3]}")
+#                     #print(f" ground captions: {ground_captions[:3]}")
+                    
+                
+#         test_loss = test_loss / len(self.__test_loader)
+#         bleu1_val = bleu1_val / len(self.__test_loader)
+#         bleu4_val = bleu4_val / len(self.__test_loader)
+        
+#         result_str = "Test Performance: Loss: {}, Bleu1: {}, Bleu4: {}".format(test_loss, bleu1_val, bleu4_val)
+
+#         self.__log(result_str)
+
+#         return test_loss, bleu1_val, bleu4_val
+
+
+    
 
     def __save_model(self):
         root_model_path = os.path.join(self.__experiment_dir, 'latest_model.pt')

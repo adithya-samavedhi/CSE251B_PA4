@@ -38,11 +38,12 @@ class Architecture1(nn.Module):
             self.decoder_unit = nn.LSTM(input_size=self.embed_size, hidden_size=self.hidden_dim, num_layers=2, batch_first=True)
         self.fc = nn.Linear(self.hidden_dim, self.vocab_size)
         self.softmax = nn.Softmax(dim=2)
+        self.bn = nn.BatchNorm1d(self.embed_size)
 
     def forward(self, x, captions=None):
         x = self.resnet50(x)  # shape (batch_size, 512, 1, 1)
         x = x.squeeze()  # shape (batch_size, 512)
-        x = self.linear(x)  # shape (batch_size, 256)
+        x = self.bn(self.linear(x))  # shape (batch_size, 256)
 
         embeddings = self.embedding(captions)
         
@@ -57,19 +58,22 @@ class Architecture1(nn.Module):
     def generate_final(self, x, max_length=100, stochastic = False, temp=0.1):
         x = self.resnet50(x)  # shape (batch_size, 512, 1, 1)
         x = x.squeeze()  # shape (batch_size, 512)
-        x = self.linear(x)  # shape (batch_size, 256)
+        x = self.bn(self.linear(x))  # shape (batch_size, 256)
 
         pred = torch.zeros((x.size(0), max_length), dtype=torch.long).cuda()
         x = x.unsqueeze(1)
+        states=None
 
         for t in range(max_length):
-            hiddens, _ = self.decoder_unit(x) # output dimension?
+            hiddens, states = self.decoder_unit(x, states) # output dimension?
             outputs = self.fc(hiddens)
 
             if stochastic:
-                outputs = self.softmax(outputs/temp).reshape(outputs.size(0),-1)
+                outputs = F.softmax(outputs/temp, dim=-1).reshape(outputs.size(0),-1)
                 # batch_size * vocab_size
-                pred[:, t] = torch.multinomial(outputs.data, 1).view(-1)
+                outputs = Categorical(outputs) 
+                pred[:,t] = outputs.sample()
+#                 pred[:, t] = torch.multinomial(outputs.data, 1).view(-1)
             else:
                 #deterministic
                 pred[:, t] = torch.argmax(outputs, dim=2).view(-1)

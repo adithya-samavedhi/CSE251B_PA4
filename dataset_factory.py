@@ -33,14 +33,14 @@ def get_datasets(config_data):
     test_data_loader = get_coco_dataloader(test_ids_file_path, root_test, test_annotation_file, coco_test, vocabulary,
                                            config_data)
 
-    return coco, vocabulary, train_data_loader, val_data_loader, test_data_loader
+    return coco_test, vocabulary, train_data_loader, val_data_loader, test_data_loader
 
 
 def get_coco_dataloader(img_ids_file_path, imgs_root_dir, annotation_file_path, coco_obj, vocabulary, config_data):
     with open(img_ids_file_path, 'r') as f:
         reader = csv.reader(f)
         img_ids = list(reader)
-    img_ids = [int(i) for i in img_ids[0][:1000]]
+    img_ids = [int(i) for i in img_ids[0]]
 
     ann_ids = [coco_obj.imgToAnns[img_ids[i]][j]['id'] for i in range(0, len(img_ids)) for j in
                range(0, len(coco_obj.imgToAnns[img_ids[i]]))]
@@ -54,7 +54,7 @@ def get_coco_dataloader(img_ids_file_path, imgs_root_dir, annotation_file_path, 
     print(f"len of dataset is {len(dataset)}")
     return DataLoader(dataset=dataset,
                       batch_size=config_data['dataset']['batch_size'],
-                      shuffle=False,
+                      shuffle=True,
                       num_workers=config_data['dataset']['num_workers'],
                       collate_fn=collate_fn,
                       pin_memory=True)

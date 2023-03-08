@@ -1,5 +1,5 @@
 {
-  "experiment_name": "experiment_1",
+  "experiment_name": "final_final_arch_1_lstm_512",
   "dataset": {
     "training_ids_file_path": "./train_ids.csv",
     "validation_ids_file_path": "./val_ids.csv",
@@ -9,15 +9,15 @@
     "images_root_dir": "./data/images/",
     "vocabulary_threshold": 2,
     "img_size": 256,
-    "batch_size": 64,
+    "batch_size": 128,
     "num_workers": 20
   },
   "experiment": {
-    "num_epochs": 20,
+    "num_epochs": 15,
     "learning_rate": 5e-4
   },
   "model": {
-     "architecture": "architecture 2",
+     "architecture": "architecture 1",
     "hidden_size": 512,
     "embedding_size": 300,
     "model_type": "LSTM",
@@ -27,7 +27,7 @@
   "generation": {
     "max_length": 20,
     "deterministic": false,
-    "temperature": 0.5
+    "temperature": 0.1
   },
   "early_stop": {
     "is_early_stop": true,
