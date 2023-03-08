@@ -358,18 +358,32 @@ class Experiment(object):
         captions = captions[:10]
         generate_captions = generate_captions[:10]
         
-        for i,image in enumerate(images):
+        print(images.shape)
+        print(captions.shape)
+        print(generate_captions.shape)
+        
+        if os.path.exists(self.__experiment_dir+'/images')==False:
+            os.makedirs(self.__experiment_dir+'/images')
+            
+            
+        for i,(image,caption,generate_caption) in enumerate(zip(images,captions,generate_captions)):
             plt.imshow(image.permute(1, 2, 0).cpu().numpy())
-            plt.savefig(self.__experiment_dir+f'/image_{i}.png')
+            
+            plt.savefig(self.__experiment_dir+'/images/'+f'image_{i}.png')
+
             caption = self.vec_to_words(caption)
-            write_to_file_in_dir(self.__experiment_dir,f"image_{str(i)}_ground_caption.txt",caption)
+            caption = " ".join(word for word in caption)
+            generate_caption = self.vec_to_words(generate_caption)
+            generate_caption = " ".join(word for word in generate_caption)
+            
+            write_to_file_in_dir(self.__experiment_dir+"/images",f"image_{str(i)}_ground_caption.txt",caption)
+            write_to_file_in_dir(self.__experiment_dir+"/images",f"image_{str(i)}_generated_caption.txt",generate_caption)
+            
             
 #             for j,caption in enumerate(captions):
 #                 caption = self.vec_to_words(caption)
 #                 write_to_file_in_dir(self.__experiment_dir,f"image_{str(i)}_ground_caption_{j}.txt",caption)
 
-            for j,caption in enumerate(generate_captions):
-                caption = self.vec_to_words(caption)
-                write_to_file_in_dir(self.__experiment_dir,f"image_{str(i)}_generated_caption_{j}.txt",caption)
+            
             
         
