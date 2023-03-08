@@ -1,5 +1,5 @@
 {
-  "experiment_name": "model_lstm_arch_1_1",
+  "experiment_name": "experiment_1",
   "dataset": {
     "training_ids_file_path": "./train_ids.csv",
     "validation_ids_file_path": "./val_ids.csv",
@@ -9,7 +9,7 @@
     "images_root_dir": "./data/images/",
     "vocabulary_threshold": 2,
     "img_size": 256,
-    "batch_size": 128,
+    "batch_size": 64,
     "num_workers": 20
   },
   "experiment": {
@@ -28,5 +28,9 @@
     "max_length": 20,
     "deterministic": false,
     "temperature": 0.5
+  },
+  "early_stop": {
+    "is_early_stop": true,
+    "early_stopping_rounds": 3
   }
 }

@@ -12,6 +12,8 @@ from model_factory import get_model
 import torch.nn as nn
 import nltk
 import string
+import matplotlib.pyplot as plt
+import os
 
 # Class to encapsulate a neural experiment.
 # The boilerplate code to setup the experiment, log stats, checkpoints and plotting have been provided to you.
@@ -22,61 +24,56 @@ class Experiment(object):
         config_data = read_file_in_dir('./', name + '.json')
         if config_data is None:
             raise Exception("Configuration file doesn't exist: ", name)
- 
+
         self.__name = config_data['experiment_name']
         self.__experiment_dir = os.path.join(ROOT_STATS_DIR, self.__name)
- 
+
         # Load Datasets
         self.__coco_test, self.__vocab, self.__train_loader, self.__val_loader, self.__test_loader = get_datasets(
             config_data)
-        self.__test_caption = config_data['dataset']['test_annotation_file_path']
-        self.__train_caption = config_data['dataset']['training_annotation_file_path']
-        self.__coco_test = COCO(self.__test_caption)
-        self.__coco_train = COCO(self.__train_caption)
+
         # Setup Experiment
+        self.__generation_config = config_data['generation']
         self.__epochs = config_data['experiment']['num_epochs']
-        self.__early_stop = config_data['experiment']['early_stop']
-        self.__patience = config_data['experiment']['patience']
         self.__current_epoch = 0
         self.__training_losses = []
         self.__val_losses = []
-        self.__val_bleu1 = []
-        self.__val_bleu4 = []
-        self.__best_model = (None, None)  # Save your best model in this field and use this in test method.
-        self.__best_bleu = 0  # Use this criterion to update best model and perform early stopping
-        np.random.seed(config_data['experiment']['random_seed'])
- 
-        # Generation hyperparameters
+        self.__best_model = None # Save your best model in this field and use this in test method.
+        
+        self.__inference_max_len = config_data['generation']['max_length']
+
+        # Init Model
+        self.__model = get_model(config_data, self.__vocab)
+        self.__device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+
+        self.__criterion =  nn.CrossEntropyLoss().to(self.__device)
+        self.__optimizer =  optim.Adam(self.__model.parameters(), lr=config_data['experiment']['learning_rate'])
+        self.generation_config = config_data['generation']
+        
         self.__max_length = config_data['generation']['max_length']
         self.__stochastic = not config_data['generation']['deterministic']
         self.__temperature = config_data['generation']['temperature']
- 
-        # Init Model
-        encoder, decoder = get_model(config_data, self.__vocab)
-        self.__encoder = encoder
-        self.__decoder = decoder
- 
-        self.__criterion = torch.nn.CrossEntropyLoss().cuda()
-        self.__optimizer = torch.optim.Adam(itertools.chain(self.__encoder.parameters(), self.__decoder.parameters()),
-                                            lr=config_data["experiment"]["learning_rate"])
- 
+        self.__is_early_stop = config_data["early_stop"]["is_early_stop"]
+        self.__early_stop_epoch = config_data["early_stop"]['early_stopping_rounds']
+
         self.__init_model()
- 
+
         # Load Experiment Data if available
-#         self.__load_experiment()
- 
+        self.__load_experiment()
+
     # Loads the experiment data if exists to resume training from last saved checkpoint.
     def __load_experiment(self):
         os.makedirs(ROOT_STATS_DIR, exist_ok=True)
- 
+
         if os.path.exists(self.__experiment_dir):
             self.__training_losses = read_file_in_dir(self.__experiment_dir, 'training_losses.txt')
             self.__val_losses = read_file_in_dir(self.__experiment_dir, 'val_losses.txt')
             self.__current_epoch = len(self.__training_losses)
- 
-            state_dict = torch.load(os.path.join(self.__experiment_dir, 'best_model.pt'))
-            self.__encoder.load_state_dict(state_dict['encoder_state'])
-            self.__decoder.load_state_dict(state_dict['decoder_state'])
+
+            state_dict = torch.load(os.path.join(self.__experiment_dir, 'latest_model.pt'))
+            self.__model.load_state_dict(state_dict['model'])
+            print("Loaded saved model")
             self.__optimizer.load_state_dict(state_dict['optimizer'])
 
         else:
@@ -84,14 +81,17 @@ class Experiment(object):
 
     def __init_model(self):
         if torch.cuda.is_available():
-            self.__encoder = self.__encoder.cuda().float()
-            self.__decoder = self.__decoder.cuda().float()
+            self.__model = self.__model.cuda().float()
             self.__criterion = self.__criterion.cuda()
 
     # Main method to run your experiment. Should be self-explanatory.
     def run(self):
-        import warnings
-        warnings.filterwarnings(action="ignore", category=UserWarning)
+        #Early Stop
+        if self.__is_early_stop:
+            patience = self.__early_stop_epoch
+            best_loss = 1e9
+            best_iter = 0
+            
         start_epoch = self.__current_epoch
         for epoch in tqdm(range(start_epoch, self.__epochs)):  # loop over the dataset multiple times
             start_time = datetime.now()
@@ -102,99 +102,126 @@ class Experiment(object):
             print(f"Epoch {epoch+1} Validation loss is {val_loss} perplexity is {np.exp(val_loss)}")
             
             self.__record_stats(train_loss, val_loss)
-            # self.__log_epoch_stats(start_time)
-            self.__save_model()
+            self.__log_epoch_stats(start_time)
+            
+            #Check for Early Stopping
+            if self.__is_early_stop:
+                best_loss, best_iter, patience = self.early_stopping(epoch, self.__early_stop_epoch, best_loss,
+                                                                    best_iter, val_loss, patience)
+                print(f"Patience = {patience}")
+                if patience==0:
+                    print(f"Training stopped early at epoch:{epoch}, best_loss = {best_loss}, best_iteration={best_iter}")
+                    break    
+            else:
+                self.__save_model()
 
     def __train(self):
-        self.__encoder.eval()
-        self.__decoder.train()
-        training_loss = 0
-        # index, image, target, image_id
-        for i, (images, captions, img_ids, length) in enumerate(tqdm(self.__train_loader)):
-            captions = captions.cuda()
-            encoder_output = self.__encoder(images.cuda())
-            pred_captions = self.__decoder(encoder_output, captions[:, :-1], length)
-            loss = self.__criterion(torch.flatten(pred_captions, start_dim=0, end_dim=1),
+        vocab_size = len(self.__vocab)
+        self.__model.train()
+        training_loss = []
+
+        print(self.__device)
+        # Iterate over the data, implement the training function
+        for i, (images, captions, _) in tqdm(enumerate(self.__train_loader)):
+            # both inputs and labels have to reside in the same device as the model's
+            images = images.to(self.__device)
+            captions = captions.to(self.__device)
+            outputs =  self.__model.forward(images, captions[:,:-1].cuda())
+            
+            loss = self.__criterion(torch.flatten(outputs, start_dim=0, end_dim=1),
                                     torch.flatten(captions, start_dim=0, end_dim=1))
-            
-            training_loss += loss.sum().item()
-            
+    
             self.__optimizer.zero_grad()
             loss.backward()
             self.__optimizer.step()
- 
-        training_loss = training_loss / len(self.__train_loader)
- 
-        return training_loss
- 
+            training_loss.append(loss.item())
+
+        return np.mean(training_loss)
+
+    # TODO: Perform one Pass on the validation set and return loss value. You may also update your best model here.
     def __val(self):
-        self.__encoder.eval()
-        self.__decoder.eval()
-        val_loss = 0
+        vocab_size = len(self.__vocab)
+        self.__model.eval()
+        validation_loss = []
         bleu1_val = 0
         bleu4_val = 0
-        
-        with torch.no_grad():
-            for i, (images, captions, img_ids, length) in enumerate(tqdm(self.__val_loader)):
-                captions = captions.cuda()
-                encoder_output = self.__encoder(images.cuda())
-                ground_captions = [[i['caption'] for i in self.__coco_train.imgToAnns[idx]] for idx in img_ids]
-                pred_captions = self.__decoder(encoder_output, captions[:,:-1], length)
-                loss = self.__criterion(torch.flatten(pred_captions, start_dim=0, end_dim=1),
-                                        torch.flatten(captions, start_dim=0, end_dim=1))
-                generate_captions = self.__decoder.generate(encoder_output, max_length=self.__max_length,
-                                                            stochastic=self.__stochastic, temp=self.__temperature)
-                
-                if i%100 == 0:
+
+        # Iterate over the data, implement the training function
+        for i, (images, captions, _) in enumerate(self.__val_loader):
+            # both inputs and labels have to reside in the same device as the model's
+            images =  images.to(self.__device)
+            captions =   captions.to(self.__device)
+
+            outputs =  self.__model.forward(images, captions[:,:-1])
+
+            loss = self.__criterion(torch.flatten(outputs, start_dim=0, end_dim=1),
+                                    torch.flatten(captions, start_dim=0, end_dim=1))
+            validation_loss.append(loss.item())
+            
+            if i%100 == 0:
                     print(i)
                     print(captions[0,:].shape)
                     print( self.vec_to_words(captions[0,:]) )
                     print( self.vec_to_words(pred_captions.argmax(dim=2)[0,:]) )
                     print( self.vec_to_words(generate_captions[0,:]) )
-                    
-                
-                
-                val_loss += loss.sum().item()
-                bleu1_val += self.calc_bleu1(ground_captions, generate_captions)
-                bleu4_val += self.calc_bleu4(ground_captions, generate_captions)
- 
-        val_loss = val_loss / len(self.__val_loader)
-        bleu1_val = bleu1_val / len(self.__val_loader)
-        bleu4_val = bleu4_val / len(self.__val_loader)
- 
-        return val_loss, bleu1_val, bleu4_val
- 
-    def test(self):
-        self.__encoder.eval()
-        self.__decoder.eval()
-        print('Testing')
+
+        return np.mean(validation_loss)
         
-        test_loss = 0
+
+
+    # TODO: Implement your test function here. Generate sample captions and evaluate loss and
+    #  bleu scores using the best model. Use utility functions provided to you in caption_utils.
+    #  Note than you'll need image_ids and COCO object in this case to fetch all captions to generate bleu scores.
+    def test(self):
+        print("Testing")
+        vocab_size = len(self.__vocab)
+        state_dict = torch.load(os.path.join(self.__experiment_dir, 'latest_model.pt'))
+        self.__model.load_state_dict(state_dict['model'])
+        self.__optimizer.load_state_dict(state_dict['optimizer'])
+        
+        self.__model.eval()
         bleu1_val = 0
         bleu4_val = 0
+        test_loss = 0
+        
         with torch.no_grad():
-            for iter, (images, captions, img_ids, length) in enumerate(self.__test_loader):
-                captions = captions.cuda()
+            for iter, (images, captions, img_ids) in enumerate(self.__train_loader):
+                images = images.to(self.__device)
+                captions = captions.to(self.__device)
+                
                 ground_captions = [[i['caption'] for i in self.__coco_test.imgToAnns[idx]] for idx in img_ids]
-                encoder_output = self.__encoder(images.cuda())
-                pred_captions = self.__decoder(encoder_output, captions[:,:-1], length)
-                generate_captions = self.__decoder.generate(encoder_output, max_length=self.__max_length,
+
+                
+                outputs =  self.__model.forward(images, captions[:,:-1])
+
+                loss = self.__criterion(torch.flatten(outputs, start_dim=0, end_dim=1),
+                                    torch.flatten(captions, start_dim=0, end_dim=1))
+                test_loss += loss.item()
+    
+                generate_captions = self.__model.generate_final(images, max_length=self.__max_length,
                                                             stochastic=self.__stochastic, temp=self.__temperature)
-                loss = self.__criterion(torch.flatten(pred_captions, start_dim=0, end_dim=1),
-                                        torch.flatten(captions, start_dim=0, end_dim=1))
-                test_loss += loss.sum().item()
- 
                 bleu1_val += self.calc_bleu1(ground_captions, generate_captions)
                 bleu4_val += self.calc_bleu4(ground_captions, generate_captions)
- 
+                
+                if iter % 100 ==0:
+                    print(loss.item(),bleu1_val/(iter+1),bleu4_val/(iter+1))
+                    print(captions[0,:].shape)
+                    self.plot_images(images,captions,generate_captions)
+                    print( self.vec_to_words(captions[0,:]) )
+#                     print( self.vec_to_words(pred_captions.argmax(dim=2)[0,:]) )
+                    print( self.vec_to_words(generate_captions[0,:]) )
+                    #print(f" generated captions: {generate_captions[:3]}")
+                    #print(f" ground captions: {ground_captions[:3]}")
+                    
+                
         test_loss = test_loss / len(self.__test_loader)
         bleu1_val = bleu1_val / len(self.__test_loader)
         bleu4_val = bleu4_val / len(self.__test_loader)
         
         result_str = "Test Performance: Loss: {}, Bleu1: {}, Bleu4: {}".format(test_loss, bleu1_val, bleu4_val)
- 
+
         self.__log(result_str)
- 
+
         return test_loss, bleu1_val, bleu4_val
 
     def __save_model(self):
@@ -297,3 +324,52 @@ class Experiment(object):
     def bleu4(self, reference_captions, predicted_caption):
         return 100 * sentence_bleu(reference_captions, predicted_caption,
                                weights=(0, 0, 0, 1), smoothing_function=SmoothingFunction().method1)
+    
+    def early_stopping(self, iter_num, early_stopping_rounds, best_loss, best_iter, loss, patience):
+        """
+        Implements the early stopping functionality with a loss monitor. If the patience is exhausted it interupts the training process and 
+        returns the best model and its corresponding loss and accuracy score on validation data.
+        Parameters
+        ----------
+        iter_num: Current epoch number.
+        early_stopping_rounds: User specified hyperparameters that indicates the patience period upper limit.
+        best_loss: Best validation set loss observed till the current iteration.
+        best_iter: Iteration number of best validation loss (best_loss)
+        loss: Current iteration loss on validation data.
+        patience: Current patience level. If best_loss is not beaten then patience will be decremented by 1.
+        Returns
+        -------
+        best_loss: Updated best loss after iteration iter_num.
+        best_iter: Best iteration till iter_num.
+        patience: Updated patience value.
+        """
+        if loss>=best_loss:
+            patience-=1
+        else:
+            self.__save_model()
+            patience = early_stopping_rounds
+            best_loss = loss
+            best_iter = iter_num
+
+        return best_loss, best_iter, patience
+    
+    def plot_images(self,images,captions,generate_captions):
+        images = images[:10]
+        captions = captions[:10]
+        generate_captions = generate_captions[:10]
+        
+        for i,image in enumerate(images):
+            plt.imshow(image.permute(1, 2, 0).cpu().numpy())
+            plt.savefig(self.__experiment_dir+f'/image_{i}.png')
+            caption = self.vec_to_words(caption)
+            write_to_file_in_dir(self.__experiment_dir,f"image_{str(i)}_ground_caption.txt",caption)
+            
+#             for j,caption in enumerate(captions):
+#                 caption = self.vec_to_words(caption)
+#                 write_to_file_in_dir(self.__experiment_dir,f"image_{str(i)}_ground_caption_{j}.txt",caption)
+
+            for j,caption in enumerate(generate_captions):
+                caption = self.vec_to_words(caption)
+                write_to_file_in_dir(self.__experiment_dir,f"image_{str(i)}_generated_caption_{j}.txt",caption)
+            
+        
