@@ -32,8 +32,7 @@ class Experiment(object):
         self.__experiment_dir = os.path.join(ROOT_STATS_DIR, self.__name)
 
         # Load Datasets
-        self.__coco_test, self.__vocab, self.__train_loader, self.__val_loader, self.__test_loader = get_datasets(
-            config_data)
+        self.__coco_test, self.__vocab, self.__train_loader, self.__val_loader, self.__test_loader = get_datasets(config_data)
         
         self.__train_caption = config_data['dataset']['training_annotation_file_path']
         self.__coco_train = COCO(self.__train_caption)
@@ -68,7 +67,7 @@ class Experiment(object):
         self.__init_model()
 
         # Load Experiment Data if available
-#         self.__load_experiment()
+        # self.__load_experiment()
 
     # Loads the experiment data if exists to resume training from last saved checkpoint.
     def __load_experiment(self):
@@ -195,7 +194,7 @@ class Experiment(object):
                 test_loss.append(loss.item())
     
                 generate_captions = self.__model.generate_final(images, max_length=self.__max_length,
-                                                            stochastic=self.__stochastic, temp=self.__temperature)
+                                                            stochastic=self.__stochastic, temp=self.__temperature).tolist()
                 gen_captions = self.__vocab.decode(generate_captions)
 
                 for b in range(images.size(0)):
