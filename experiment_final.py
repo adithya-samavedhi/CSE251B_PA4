@@ -67,7 +67,7 @@ class Experiment(object):
         self.__init_model()
 
         # Load Experiment Data if available
-        # self.__load_experiment()
+        self.__load_experiment()
 
     # Loads the experiment data if exists to resume training from last saved checkpoint.
     def __load_experiment(self):

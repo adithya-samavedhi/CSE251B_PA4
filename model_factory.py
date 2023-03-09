@@ -8,8 +8,9 @@ def get_model(config_data, vocab):
     embedding_size = config_data['model']['embedding_size']
     model_type = config_data['model']['model_type']
     num_layers = config_data['model']['num_layers']
-    architecture = "architecture 1"
+    architecture = config_data['model']['architecture']
 
+    print(architecture, model_type)
     # You may add more parameters if you want
     
     if architecture=="architecture 1":

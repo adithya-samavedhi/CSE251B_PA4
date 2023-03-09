@@ -19,6 +19,7 @@ class Architecture2(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.model_type = model_type
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
         resnet50 = models.resnet50(pretrained=True)
@@ -59,16 +60,15 @@ class Architecture2(nn.Module):
         x = x.view(input.size(0), 1, -1)
         
         #Concatenation operation
-        x = x.unsqueeze(1).expand(-1, captions.shape[1], -1)
-        x_cat = torch.cat((x, captions), dim=2)
+        padding = torch.zeros(x.shape).to(self.device)
+        x_cat = torch.cat((x, padding), dim=2)
         
-        hiddens, c = self.decoder_unit(x)
+        hiddens, c = self.decoder_unit(x_cat)
         outputs[:,0,:] = self.fc(hiddens).squeeze()
 
         embeddings = self.embedding(captions)
         for t in range(seq_len-1):
-            embed_token = self.embedding(outputs[:, t:t+1])
-            x_cat = torch.cat((x, embed_token), dim=2)
+            x_cat = torch.cat((x, embeddings[:, t:t+1, :]), dim=2)
             hiddens, c = self.decoder_unit(x_cat, c)
             outputs[:, t+1, :] = self.fc(hiddens).squeeze()
             
@@ -91,7 +91,9 @@ class Architecture2(nn.Module):
         x = self.bn(self.linear(x))  # shape (batch_size, 256)
         x = x.view(input.size(0), 1, -1)
         
-        x_cat = torch.cat((x, self.embedding(outputs[:, 0]).unsqueeze(1)), dim=2)
+        #Concatenation operation
+        padding = torch.zeros(x.shape).to(self.device)
+        x_cat = torch.cat((x, padding), dim=2)
         
         #Decoder
         hiddens, c = self.decoder_unit(x_cat)
@@ -101,7 +103,7 @@ class Architecture2(nn.Module):
         for t in range(max_length-1):
             embed_token = self.embedding(outputs[:, t:t+1])
             x_cat = torch.cat((x, embed_token), dim=2)
-            hiddens, c = self.decoder_unit(embed_token, c)
+            hiddens, c = self.decoder_unit(x_cat, c)
             output = self.fc(hiddens)
             sampling(output, t+1)
 

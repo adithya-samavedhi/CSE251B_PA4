@@ -1,5 +1,5 @@
 {
-  "experiment_name": "architecture_2_run_1",
+  "experiment_name": "architecture_1_run_1",
   "dataset": {
     "training_ids_file_path": "./train_ids.csv",
     "validation_ids_file_path": "./val_ids.csv",
@@ -17,13 +17,12 @@
     "learning_rate": 1e-4
   },
   "model": {
-     "architecture": "architecture 2",
+    "architecture": "architecture 1",
     "hidden_size": 512,
     "embedding_size": 300,
     "model_type": "LSTM",
-      "num_layers":2,
-    "keep_image": false,
-    "load_from": "best_model"
+    "num_layers":2,
+    "keep_image": false
   },
   "generation": {
     "max_length": 20,
