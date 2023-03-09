@@ -195,7 +195,15 @@ class Experiment(object):
     
                 generate_captions = self.__model.generate_final(images, max_length=self.__max_length,
                                                             stochastic=self.__stochastic, temp=self.__temperature).tolist()
+        
+                if iter % 200 ==1:
+                            print(type(images))
+                            print(type(captions))
+                            print(generate_captions)
+                            self.plot_images(images, captions, generate_captions)
                 gen_captions = self.__vocab.decode(generate_captions)
+            
+                
 
                 for b in range(images.size(0)):
                     ground_truth = self.__coco_test.imgToAnns[img_ids[b]]
@@ -347,13 +355,14 @@ class Experiment(object):
         return best_loss, best_iter, patience
     
     def plot_images(self,images,captions,generate_captions):
+        generate_captions = torch.tensor(generate_captions, dtype=torch.int32 )
         images = images[:25]
         captions = captions[:25]
         generate_captions = generate_captions[:25]
         
-        print(images.shape)
-        print(captions.shape)
-        print(generate_captions.shape)
+#         print(images.shape)
+#         print(captions.shape)
+#         print(generate_captions.shape)
         
         if os.path.exists(self.__experiment_dir+'/images')==False:
             os.makedirs(self.__experiment_dir+'/images')
