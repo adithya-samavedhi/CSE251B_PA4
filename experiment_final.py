@@ -124,7 +124,6 @@ class Experiment(object):
                 self.__save_model()
 
     def __train(self):
-        vocab_size = len(self.__vocab)
         self.__model.train()
         training_loss = []
 
@@ -134,12 +133,13 @@ class Experiment(object):
             # both inputs and labels have to reside in the same device as the model's
             images = images.to(self.__device)
             captions = captions.to(self.__device)
-            outputs =  self.__model.forward(images, captions[:,:-1].cuda())
+            
+            self.__optimizer.zero_grad()
+            outputs =  self.__model.forward(images, captions)
             
             loss = self.__criterion(torch.flatten(outputs, start_dim=0, end_dim=1),
                                     torch.flatten(captions, start_dim=0, end_dim=1))
     
-            self.__optimizer.zero_grad()
             loss.backward()
             self.__optimizer.step()
             training_loss.append(loss.item())
@@ -148,45 +148,52 @@ class Experiment(object):
 
     # TODO: Perform one Pass on the validation set and return loss value. You may also update your best model here.
     def __val(self):
-        vocab_size = len(self.__vocab)
+        print("Validating")
+        
         self.__model.eval()
-        validation_loss = []
-        bleu1_val = 0
-        bleu4_val = 0
+        bleu1_val, blue4_val = 0, 0
+        val_loss = []
+        b1s, b4s = [], []
+        
+        with torch.no_grad():
+            for iter, (images, captions, img_ids) in enumerate(self.__test_loader):
+                images = images.to(self.__device)
+                captions = captions.to(self.__device)
+                
+                #ground_captions = [[i['caption'] for i in self.__coco_test.imgToAnns[idx]] for idx in img_ids]
+                
+                outputs =  self.__model.forward(images, captions)
 
-        # Iterate over the data, implement the training function
-        for i, (images, captions, img_ids) in enumerate(self.__val_loader):
-            # both inputs and labels have to reside in the same device as the model's
-            images =  images.to(self.__device)
-            captions =   captions.to(self.__device)
-            ground_captions = [[i['caption'] for i in self.__coco_train.imgToAnns[idx]] for idx in img_ids]
-
-            outputs =  self.__model.forward(images, captions[:,:-1])
-
-            loss = self.__criterion(torch.flatten(outputs, start_dim=0, end_dim=1),
+                loss = self.__criterion(torch.flatten(outputs, start_dim=0, end_dim=1),
                                     torch.flatten(captions, start_dim=0, end_dim=1))
-            validation_loss.append(loss.item())
-            
-            generate_captions = self.__model.generate_final(images, max_length=self.__max_length,
-                                                            stochastic=self.__stochastic, temp=self.__temperature)
-            bleu1_val += self.calc_bleu1(ground_captions, generate_captions)
-            bleu4_val += self.calc_bleu4(ground_captions, generate_captions)
-            
-            if i%100 == 0:
-                    print(generate_captions)
-                    print( f"captions: {self.vec_to_words(captions[0,:])} ")
-                    if(len(generate_captions[0])>0):
-                        print(f"predicted_caption: {self.vec_to_words(generate_captions[0,:])}" )
+                val_loss.append(loss.item())
     
+                # auto-regressive generation
+                generate_captions = self.__model.generate_final(images, max_length=self.__max_length,
+                                                            stochastic=self.__stochastic, temp=self.__temperature).tolist()
+                gen_captions = self.__vocab.decode(generate_captions)
+
+                # get BLEU
+                for b in range(images.size(0)):
+                    ground_truth = self.__coco_test.imgToAnns[img_ids[b]]
+                    refs = [dict['caption'] for dict in ground_truth]
+                    ref_tokens = [nltk.tokenize.word_tokenize(s.lower()) for s in refs]
+                    
+                    b1s.append(bleu1(ref_tokens, gen_captions[b]))
+                    b4s.append(bleu4(ref_tokens, gen_captions[b]))
+                                    
+                    if iter % 50 == 0 and b == 0:
+                        print(ground_truth)
+                        print(gen_captions[b])
+                        print(b1s[-1], b4s[-1])
+                        print('-' * 20)
+
+        l, b1, b4 = np.mean(val_loss), np.mean(b1s), np.mean(b4s)
         
-        bleu1_val = bleu1_val / len(self.__test_loader)
-        bleu4_val = bleu4_val / len(self.__test_loader)
-        
-        result_str = "Validation Performance: Loss: {}, Bleu1: {}, Bleu4: {}".format(np.mean(validation_loss), bleu1_val, bleu4_val)
-        
-        print(result_str)
+        result_str = "Validation Performance: Loss: {}, Perplexity: {}, Bleu1: {}, Bleu4: {}".format(l,np.exp(l),b1,b4)
         self.__log(result_str)
-        return np.mean(validation_loss), bleu1_val, bleu4_val
+
+        return np.mean(val_loss), b1, b4
         
 
 
@@ -195,28 +202,20 @@ class Experiment(object):
     #  Note than you'll need image_ids and COCO object in this case to fetch all captions to generate bleu scores.
     def test(self):
         print("Testing")
-        vocab_size = len(self.__vocab)
-        state_dict = torch.load(os.path.join(self.__experiment_dir, 'latest_model.pt'))
-        self.__model.load_state_dict(state_dict['model'])
-        self.__optimizer.load_state_dict(state_dict['optimizer'])
         
         self.__model.eval()
-        bleu1_val = 0
-        bleu4_val = 0
-        test_loss = 0
+        bleu1_test, blue4_test = 0, 0
         test_loss = []
-        b1, b4 = 0, 0
-        b1s = []
-        b4s = []
+        b1s, b4s = [], []
         
         with torch.no_grad():
             for iter, (images, captions, img_ids) in enumerate(self.__test_loader):
                 images = images.to(self.__device)
                 captions = captions.to(self.__device)
                 
-                ground_captions = [[i['caption'] for i in self.__coco_test.imgToAnns[idx]] for idx in img_ids]
+                #ground_captions = [[i['caption'] for i in self.__coco_test.imgToAnns[idx]] for idx in img_ids]
                 
-                outputs =  self.__model.forward(images, captions[:,:-1])
+                outputs =  self.__model.forward(images, captions)
 
                 loss = self.__criterion(torch.flatten(outputs, start_dim=0, end_dim=1),
                                     torch.flatten(captions, start_dim=0, end_dim=1))
@@ -226,14 +225,11 @@ class Experiment(object):
                                                             stochastic=self.__stochastic, temp=self.__temperature)
                 gen_captions = self.__vocab.decode(generate_captions)
 
-                # get BLEU
                 for b in range(images.size(0)):
-                    # print(img_ids[b])
                     ground_truth = self.__coco_test.imgToAnns[img_ids[b]]
                     refs = [dict['caption'] for dict in ground_truth]
                     ref_tokens = [nltk.tokenize.word_tokenize(s.lower()) for s in refs]
-                    # print(refs)
-                    # print(gen_captions[b])
+                    
                     b1s.append(bleu1(ref_tokens, gen_captions[b]))
                     b4s.append(bleu4(ref_tokens, gen_captions[b]))
 
@@ -243,43 +239,12 @@ class Experiment(object):
                         print(b1s[-1], b4s[-1])
                         print('-' * 20)
 
-        #                     break
-        #                 break
         l, b1, b4 = np.mean(test_loss), np.mean(b1s), np.mean(b4s)
-        # PPL: https://huggingface.co/docs/transformers/perplexity
-        result_str = "Test Performance: Loss: {}, Perplexity: {}, Bleu1: {}, Bleu4: {}".format(l,
-                                                                                               np.exp(l),
-                                                                                               b1,
-                                                                                               b4)
+        
+        result_str = "Test Performance: Loss: {}, Perplexity: {}, Bleu1: {}, Bleu4: {}".format(l,np.exp(l),b1,b4)
         self.__log(result_str)
 
-        return test_loss, b1, b4
-#                 bleu1_val += self.calc_bleu1(ground_captions, generate_captions)
-#                 bleu4_val += self.calc_bleu4(ground_captions, generate_captions)
-                
-#                 if iter % 200 ==0:
-#                     print(loss.item(),bleu1_val/(iter+1),bleu4_val/(iter+1))
-#                     print(captions[0,:].shape)
-#                     self.plot_images(images,captions,generate_captions)
-#                     print( self.vec_to_words(captions[0,:]) )
-# #                     print( self.vec_to_words(pred_captions.argmax(dim=2)[0,:]) )
-#                     print( self.vec_to_words(generate_captions[0,:]) )
-#                     #print(f" generated captions: {generate_captions[:3]}")
-#                     #print(f" ground captions: {ground_captions[:3]}")
-                    
-                
-#         test_loss = test_loss / len(self.__test_loader)
-#         bleu1_val = bleu1_val / len(self.__test_loader)
-#         bleu4_val = bleu4_val / len(self.__test_loader)
-        
-#         result_str = "Test Performance: Loss: {}, Bleu1: {}, Bleu4: {}".format(test_loss, bleu1_val, bleu4_val)
-
-#         self.__log(result_str)
-
-#         return test_loss, bleu1_val, bleu4_val
-
-
-    
+        return np.mean(test_loss), b1, b4
 
     def __save_model(self):
         root_model_path = os.path.join(self.__experiment_dir, 'latest_model.pt')

@@ -36,10 +36,10 @@ class Vocabulary(object):
             self.word2idx['<end>'],
             self.word2idx['<unk>'],
         }
-
+        
         ls = []
         for i in range(len(ids)):
-            l = [self.idx2word[k.item()] for k in ids[i] if k not in blist]
+            l = [self.idx2word[k] for k in ids[i] if k not in blist]
             ls.append(l)
         return ls
 

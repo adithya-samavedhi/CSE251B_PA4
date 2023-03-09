@@ -2,17 +2,18 @@
 from baseline import TransferLearningResNet50
 from architecture_2_final import Architecture2
 from architecture_1_final import Architecture1
+
 def get_model(config_data, vocab):
     hidden_size = config_data['model']['hidden_size']
     embedding_size = config_data['model']['embedding_size']
     model_type = config_data['model']['model_type']
     num_layers = config_data['model']['num_layers']
-    architecture = config_data['model']['architecture']
+    architecture = "architecture 1"
 
     # You may add more parameters if you want
     
     if architecture=="architecture 1":
-        model = Architecture1(4, hidden_size,vocab, embedding_size, num_layers, model_type)
+        model = Architecture1(len(vocab), hidden_size, embedding_size, num_layers, model_type)
     else:
         model = Architecture2(4, hidden_size,vocab, embedding_size, num_layers, model_type)
 

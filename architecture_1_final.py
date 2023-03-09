@@ -10,18 +10,17 @@ from torchvision import transforms, models
 #ToDO Fill in the __ values
 class Architecture1(nn.Module):
 
-    def __init__(self, n_class, hidden_dim, vocab, embedding_size, num_layers, model_type):
+    def __init__(self, vocab_size, hidden_dim, embedding_size, num_layers, model_type):
 
         super().__init__()
-        self.vocab = vocab
-        self.vocab_size = len(vocab)
+        self.vocab_size = vocab_size
         self.embed_size = embedding_size
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.model_type = model_type
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
-        print(self.vocab_size)
-
+        #Encoder
         resnet50 = models.resnet50(pretrained=True)
         self.resnet50 = nn.Sequential(*list(resnet50.children())[:-1])
         num_features = resnet50.fc.in_features
@@ -30,54 +29,71 @@ class Architecture1(nn.Module):
             param.requires_grad = False
             
         self.linear = nn.Linear(num_features, self.embed_size)
+        self.bn = nn.BatchNorm1d(self.embed_size)
+        
+        #Decoder
         self.embedding = nn.Embedding(self.vocab_size, self.embed_size)
         
         if self.model_type=="RNN":
-            self.decoder_unit = nn.RNN(input_size=self.embed_size, hidden_size=self.hidden_dim, num_layers=2, batch_first=True)
+            self.decoder_unit = nn.RNN(input_size=self.embed_size, hidden_size=self.hidden_dim, num_layers=self.num_layers, batch_first=True)
         else:
-            self.decoder_unit = nn.LSTM(input_size=self.embed_size, hidden_size=self.hidden_dim, num_layers=2, batch_first=True)
+            self.decoder_unit = nn.LSTM(input_size=self.embed_size, hidden_size=self.hidden_dim, num_layers=self.num_layers, batch_first=True)
         self.fc = nn.Linear(self.hidden_dim, self.vocab_size)
-        self.softmax = nn.Softmax(dim=2)
-        self.bn = nn.BatchNorm1d(self.embed_size)
-
-    def forward(self, x, captions=None):
-        x = self.resnet50(x)  # shape (batch_size, 512, 1, 1)
-        x = x.squeeze()  # shape (batch_size, 512)
+        
+    def forward(self, input, captions=None):
+        """
+        x: [batch, 3, 256, 256]
+        captions: [batch, max_seq_length]
+        
+        Returns:
+        outputs: [batch, max_seq_length, vocab_size]
+        """
+        seq_len = captions.size(1)
+        outputs = torch.zeros((input.size(0), seq_len, self.vocab_size)).to(self.device)
+        
+        #Encoder
+        x = self.resnet50(input)  # shape (batch_size, 512, 1, 1)
+        x = x.view(input.size(0),-1)  # shape (batch_size, 512)
         x = self.bn(self.linear(x))  # shape (batch_size, 256)
+        x = x.view(input.size(0), 1, -1)
+        
+        hiddens, c = self.decoder_unit(x)
+        outputs[:,0,:] = self.fc(hiddens).squeeze()
 
         embeddings = self.embedding(captions)
-        
-        image_features = x.unsqueeze(1)
-        embeddings = torch.cat((image_features, embeddings), dim=1)
-        
-        hiddens, c = self.decoder_unit(embeddings)
-        outputs = self.fc(hiddens)
+        for t in range(seq_len-1): 
+            hiddens, c = self.decoder_unit(embeddings[:,t:t+1,:], c)
+            outputs[:, t+1, :] = self.fc(hiddens).squeeze()
+            
         return outputs
 
 
-    def generate_final(self, x, max_length=100, stochastic = False, temp=0.1):
-        x = self.resnet50(x)  # shape (batch_size, 512, 1, 1)
-        x = x.squeeze()  # shape (batch_size, 512)
-        x = self.bn(self.linear(x))  # shape (batch_size, 256)
-
-        pred = torch.zeros((x.size(0), max_length), dtype=torch.long).cuda()
-        x = x.unsqueeze(1)
-        states=None
-
-        for t in range(max_length):
-            hiddens, states = self.decoder_unit(x, states) # output dimension?
-            outputs = self.fc(hiddens)
-
+    def generate_final(self, input, max_length=100, stochastic = False, temp=0.1):
+        pred = torch.zeros((input.size(0), max_length), dtype=torch.long).to(self.device)
+        
+        def sampling(output, t):
             if stochastic:
-                outputs = F.softmax(outputs/temp, dim=-1).reshape(outputs.size(0),-1)
-                # batch_size * vocab_size
-                outputs = Categorical(outputs) 
-                pred[:,t] = outputs.sample()
-#                 pred[:, t] = torch.multinomial(outputs.data, 1).view(-1)
+                p = F.softmax(output/temp, dim=-1).squeeze()
+                m = Categorical(p)
+                pred[:,t] = m.sample()
             else:
-                #deterministic
-                pred[:, t] = torch.argmax(outputs, dim=2).view(-1)
+                pred[:,t] = torch.argmax(output, dim=2).view(-1)
+        
+        #Encoder
+        x = self.resnet50(input)  # shape (batch_size, 512, 1, 1)
+        x = x.view(input.size(0),-1)  # shape (batch_size, 512)
+        x = self.bn(self.linear(x))  # shape (batch_size, 256)
+        x = x.view(input.size(0), 1, -1)
+        
+        #Decoder
+        hiddens, c = self.decoder_unit(x)
+        output = self.fc(hiddens)
+        sampling(hiddens, 0)
 
-            x = self.embedding(pred[:, t]).unsqueeze(1)
+        for t in range(max_length-1):
+            embed_token = self.embedding(pred[:,t:t+1])
+            hiddens, c = self.decoder_unit(embed_token, c)
+            output = self.fc(hiddens)
+            sampling(output, t+1)
 
         return pred
