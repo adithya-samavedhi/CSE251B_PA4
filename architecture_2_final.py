@@ -40,50 +40,69 @@ class Architecture2(nn.Module):
         self.fc = nn.Linear(self.hidden_dim, self.vocab_size)
         self.softmax = nn.Softmax(dim=2)
         self.bn = nn.BatchNorm1d(self.embed_size)
-
-
-    def forward(self, x, captions=None):
-        x = self.resnet50(x)  # shape (batch_size, 512, 1, 1)
-        x = x.reshape(x.size(0), -1)  # shape (batch_size, 512)
+    
+    def forward(self, input, captions=None):
+        """
+        x: (batch, 3, 256, 256)
+        captions: (batch, max_seq_length, vocab_size)
+        
+        Returns:
+        outputs: (batch, max_seq_length, vocab_size)
+        """
+        seq_len = captions.size(1)
+        outputs = torch.zeros((input.size(0), seq_len, self.vocab_size)).to(self.device)
+        
+        #Encoder
+        x = self.resnet50(input)  # shape (batch_size, 512, 1, 1)
+        x = x.view(input.size(0),-1)  # shape (batch_size, 512)
         x = self.bn(self.linear(x))  # shape (batch_size, 256)
-
-        #x = x.view((x.shape[0], 1, x.shape[1]))
-        captions = torch.cat((torch.zeros(captions.shape[0],1,dtype= torch.long).cuda(),captions),dim=1)
-        captions = self.embedding(captions)
+        x = x.view(input.size(0), 1, -1)
         
         #Concatenation operation
         x = x.unsqueeze(1).expand(-1, captions.shape[1], -1)
-        x = torch.cat((x, captions), dim=2)
-       
+        x_cat = torch.cat((x, captions), dim=2)
+        
         hiddens, c = self.decoder_unit(x)
-        outputs = self.fc(hiddens)
+        outputs[:,0,:] = self.fc(hiddens).squeeze()
+
+        embeddings = self.embedding(captions)
+        for t in range(seq_len-1):
+            embed_token = self.embedding(outputs[:, t:t+1])
+            x_cat = torch.cat((x, embed_token), dim=2)
+            hiddens, c = self.decoder_unit(x_cat, c)
+            outputs[:, t+1, :] = self.fc(hiddens).squeeze()
+            
         return outputs
     
-    def generate_final(self, x, max_length=100, stochastic = False, temp=0.1):
-        x = self.resnet50(x)  # shape (batch_size, 512, 1, 1)
-        x = x.reshape(x.size(0), -1)  # shape (batch_size, 512)
-        x = self.bn(self.linear(x))  # shape (batch_size, 256)
-
-        pred = torch.zeros((x.size(0), max_length), dtype=torch.long).cuda()
-        x = x.unsqueeze(1).expand(-1, 1, -1)
-
-        x_cat = torch.cat((x, self.embedding(pred[:, 0]).unsqueeze(1)), dim=2)
-        states = None
-
-        for t in range(max_length):
-            hiddens, states = self.decoder_unit(x_cat, states) # output dimension?
-            outputs = self.fc(hiddens)
-
+    def generate_final(self, input, max_length=100, stochastic = False, temp=0.1):
+        outputs = torch.zeros((input.size(0), max_length), dtype=torch.long).to(self.device)
+        
+        def sampling(output, t):
             if stochastic:
-                outputs = F.softmax(outputs/temp, dim=-1).reshape(outputs.size(0),-1)
-                # batch_size * vocab_size
-                outputs = Categorical(outputs) 
-                pred[:,t] = outputs.sample()
-#                 pred[:, t] = torch.multinomial(outputs.data, 1).view(-1)
+                p = F.softmax(output/temp, dim=-1).squeeze()
+                m = Categorical(p)
+                outputs[:,t] = m.sample()
             else:
-                #deterministic
-                pred[:, t] = torch.argmax(outputs, dim=2).view(-1)
+                outputs[:,t] = torch.argmax(output, dim=2).view(-1)
+        
+        #Encoder
+        x = self.resnet50(input)  # shape (batch_size, 512, 1, 1)
+        x = x.view(input.size(0),-1)  # shape (batch_size, 512)
+        x = self.bn(self.linear(x))  # shape (batch_size, 256)
+        x = x.view(input.size(0), 1, -1)
+        
+        x_cat = torch.cat((x, self.embedding(outputs[:, 0]).unsqueeze(1)), dim=2)
+        
+        #Decoder
+        hiddens, c = self.decoder_unit(x_cat)
+        output = self.fc(hiddens)
+        sampling(output, 0)
 
-            x_cat = torch.cat((x, self.embedding(pred[:, t]).unsqueeze(1)), dim=2)
+        for t in range(max_length-1):
+            embed_token = self.embedding(outputs[:, t:t+1])
+            x_cat = torch.cat((x, embed_token), dim=2)
+            hiddens, c = self.decoder_unit(embed_token, c)
+            output = self.fc(hiddens)
+            sampling(output, t+1)
 
-        return pred
+        return outputs

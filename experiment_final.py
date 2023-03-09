@@ -106,8 +106,8 @@ class Experiment(object):
             self.__current_epoch = epoch
             train_loss = self.__train()
             print(f"Epoch {epoch+1} loss is {train_loss} perplexity is {np.exp(train_loss)}")
-            val_loss, bleu1_val, bleu4_val = self.__val()
-#             print(f"Epoch {epoch+1} Validation loss is {val_loss} perplexity is {np.exp(val_loss)}")
+            val_loss = self.__val()
+            print(f"Epoch {epoch+1} Validation loss is {val_loss} perplexity is {np.exp(val_loss)}")
             
             self.__record_stats(train_loss, val_loss)
             self.__log_epoch_stats(start_time)
@@ -156,44 +156,17 @@ class Experiment(object):
         b1s, b4s = [], []
         
         with torch.no_grad():
-            for iter, (images, captions, img_ids) in enumerate(self.__test_loader):
+            for iter, (images, captions, img_ids) in enumerate(self.__val_loader):
                 images = images.to(self.__device)
                 captions = captions.to(self.__device)
-                
-                #ground_captions = [[i['caption'] for i in self.__coco_test.imgToAnns[idx]] for idx in img_ids]
-                
+                                
                 outputs =  self.__model.forward(images, captions)
 
                 loss = self.__criterion(torch.flatten(outputs, start_dim=0, end_dim=1),
                                     torch.flatten(captions, start_dim=0, end_dim=1))
                 val_loss.append(loss.item())
-    
-                # auto-regressive generation
-                generate_captions = self.__model.generate_final(images, max_length=self.__max_length,
-                                                            stochastic=self.__stochastic, temp=self.__temperature).tolist()
-                gen_captions = self.__vocab.decode(generate_captions)
 
-                # get BLEU
-                for b in range(images.size(0)):
-                    ground_truth = self.__coco_test.imgToAnns[img_ids[b]]
-                    refs = [dict['caption'] for dict in ground_truth]
-                    ref_tokens = [nltk.tokenize.word_tokenize(s.lower()) for s in refs]
-                    
-                    b1s.append(bleu1(ref_tokens, gen_captions[b]))
-                    b4s.append(bleu4(ref_tokens, gen_captions[b]))
-                                    
-                    if iter % 50 == 0 and b == 0:
-                        print(ground_truth)
-                        print(gen_captions[b])
-                        print(b1s[-1], b4s[-1])
-                        print('-' * 20)
-
-        l, b1, b4 = np.mean(val_loss), np.mean(b1s), np.mean(b4s)
-        
-        result_str = "Validation Performance: Loss: {}, Perplexity: {}, Bleu1: {}, Bleu4: {}".format(l,np.exp(l),b1,b4)
-        self.__log(result_str)
-
-        return np.mean(val_loss), b1, b4
+        return np.mean(val_loss)
         
 
 
@@ -237,7 +210,6 @@ class Experiment(object):
                         print(ground_truth)
                         print(gen_captions[b])
                         print(b1s[-1], b4s[-1])
-                        print('-' * 20)
 
         l, b1, b4 = np.mean(test_loss), np.mean(b1s), np.mean(b4s)
         

@@ -42,11 +42,11 @@ class Architecture1(nn.Module):
         
     def forward(self, input, captions=None):
         """
-        x: [batch, 3, 256, 256]
-        captions: [batch, max_seq_length]
+        x: (batch, 3, 256, 256)
+        captions: (batch, max_seq_length, vocab_size)
         
         Returns:
-        outputs: [batch, max_seq_length, vocab_size]
+        outputs: (batch, max_seq_length, vocab_size)
         """
         seq_len = captions.size(1)
         outputs = torch.zeros((input.size(0), seq_len, self.vocab_size)).to(self.device)
@@ -88,7 +88,7 @@ class Architecture1(nn.Module):
         #Decoder
         hiddens, c = self.decoder_unit(x)
         output = self.fc(hiddens)
-        sampling(hiddens, 0)
+        sampling(output, 0)
 
         for t in range(max_length-1):
             embed_token = self.embedding(pred[:,t:t+1])
