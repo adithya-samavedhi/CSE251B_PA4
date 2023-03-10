@@ -13,7 +13,7 @@ class Architecture2(nn.Module):
     This model is based on the encoder decoder architecture for image captioning.
     The encoded image is concatenated at every  timestep of the decoder model and further timesteps take previous predictions as inputs.
     """
-    def __init__(self, n_class, hidden_dim, vocab, embedding_size, num_layers, model_type):
+    def __init__(self,  hidden_dim, vocab, embedding_size, num_layers, model_type):
 
         super().__init__()
         self.vocab = vocab

@@ -16,6 +16,6 @@ def get_model(config_data, vocab):
     if architecture=="architecture 1":
         model = Architecture1(len(vocab), hidden_size, embedding_size, num_layers, model_type)
     else:
-        model = Architecture2(4, hidden_size,vocab, embedding_size, num_layers, model_type)
+        model = Architecture2( hidden_size, vocab, embedding_size, num_layers, model_type)
 
     return model
