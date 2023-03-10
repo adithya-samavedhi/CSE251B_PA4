@@ -9,7 +9,10 @@ from torchvision import transforms, models
 
 #ToDO Fill in the __ values
 class Architecture2(nn.Module):
-
+    """
+    This model is based on the encoder decoder architecture for image captioning.
+    The encoded image is concatenated at every  timestep of the decoder model and further timesteps take previous predictions as inputs.
+    """
     def __init__(self, n_class, hidden_dim, vocab, embedding_size, num_layers, model_type):
 
         super().__init__()
@@ -44,6 +47,7 @@ class Architecture2(nn.Module):
     
     def forward(self, input, captions=None):
         """
+        This function uses teacher forcing to perform a feed forward of the model.
         x: (batch, 3, 256, 256)
         captions: (batch, max_seq_length, vocab_size)
         
@@ -75,6 +79,9 @@ class Architecture2(nn.Module):
         return outputs
     
     def generate_final(self, input, max_length=100, stochastic = False, temp=0.1):
+        """
+        This function performs the caption generation for the model, it does not use teacher forcing but instead uses the previous predicted output as  the inputto the next timestep. 
+        """
         outputs = torch.zeros((input.size(0), max_length), dtype=torch.long).to(self.device)
         
         def sampling(output, t):

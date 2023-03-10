@@ -18,10 +18,7 @@ import os
 import warnings
 warnings.filterwarnings("ignore")
 
-# Class to encapsulate a neural experiment.
-# The boilerplate code to setup the experiment, log stats, checkpoints and plotting have been provided to you.
-# You only need to implement the main training logic of your experiment and implement train, val and test methods.
-# You are free to modify or restructure the code as per your convenience.
+
 class Experiment(object):
     def __init__(self, name):
         config_data = read_file_in_dir('./', name + '.json')
@@ -123,6 +120,7 @@ class Experiment(object):
                 self.__save_model()
 
     def __train(self):
+        # Train method for the model
         self.__model.train()
         training_loss = []
 
@@ -147,6 +145,7 @@ class Experiment(object):
 
     # TODO: Perform one Pass on the validation set and return loss value. You may also update your best model here.
     def __val(self):
+        # Validation method for the model
         print("Validating")
         
         self.__model.eval()
@@ -168,11 +167,8 @@ class Experiment(object):
         return np.mean(val_loss)
         
 
-
-    # TODO: Implement your test function here. Generate sample captions and evaluate loss and
-    #  bleu scores using the best model. Use utility functions provided to you in caption_utils.
-    #  Note than you'll need image_ids and COCO object in this case to fetch all captions to generate bleu scores.
     def test(self):
+        # Method for testing and calculating bleu scores
         print("Testing")
         
         self.__model.eval()
@@ -355,14 +351,13 @@ class Experiment(object):
         return best_loss, best_iter, patience
     
     def plot_images(self,images,captions,generate_captions):
+        # method to save images and their respective captions
         generate_captions = torch.tensor(generate_captions, dtype=torch.int32 )
         images = images[:25]
         captions = captions[:25]
         generate_captions = generate_captions[:25]
         
-#         print(images.shape)
-#         print(captions.shape)
-#         print(generate_captions.shape)
+
         
         if os.path.exists(self.__experiment_dir+'/images')==False:
             os.makedirs(self.__experiment_dir+'/images')
@@ -381,10 +376,7 @@ class Experiment(object):
             write_to_file_in_dir(self.__experiment_dir+"/images",f"image_{str(i)}_ground_caption.txt",caption)
             write_to_file_in_dir(self.__experiment_dir+"/images",f"image_{str(i)}_generated_caption.txt",generate_caption)
             
-            
-#             for j,caption in enumerate(captions):
-#                 caption = self.vec_to_words(caption)
-#                 write_to_file_in_dir(self.__experiment_dir,f"image_{str(i)}_ground_caption_{j}.txt",caption)
+
 
             
             
